@@ -1,125 +1,123 @@
 // src/app/(shop)/products/page.js
-'use client';
-import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { X, ChevronDown, Loader2 } from 'lucide-react';
-import { getProducts } from '@/lib/firebase/products';
-import { ProductGrid } from '@/components/products/ProductGrid';
+'use client'
+import { Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { X, ChevronDown, Loader2 } from 'lucide-react'
+import { getProducts } from '@/lib/firebase/products'
 import { useCategories } from '@/hooks/useCategories'
-import { ProductGridSkeleton } from '@/components/products/ProductSkeleton';
-
-
+import { ProductGrid } from '@/components/products/ProductGrid'
+import { ProductGridSkeleton } from '@/components/products/ProductSkeleton'
 
 const SORT_OPTIONS = [
-  { value: 'newest', label: 'Newest first' },
-  { value: 'popular', label: 'Most popular' },
-  { value: 'price_asc', label: 'Price: low to high' },
+  { value: 'newest',     label: 'Newest first' },
+  { value: 'popular',    label: 'Most popular' },
+  { value: 'price_asc',  label: 'Price: low to high' },
   { value: 'price_desc', label: 'Price: high to low' },
 ]
 
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 12
 
-export default function ProductsPage() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const { categories } = useCategories() 
-  console.log(categories);
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [offset, setOffset] = useState(0); // numeric offset, not Firestore doc
-  const [hasMore, setHasMore] = useState(false);
-  const [totalShowing, setTotalShowing] = useState(0);
+// ── Inner component — uses useSearchParams safely inside Suspense ──────────
+function ProductsContent() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const { categories } = useCategories()
 
-  const category = searchParams.get('category') || '';
-  const sortBy = searchParams.get('sort') || 'newest';
-  const search = searchParams.get('search') || '';
+  const [products,     setProducts]     = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [loadingMore,  setLoadingMore]  = useState(false)
+  const [offset,       setOffset]       = useState(0)
+  const [hasMore,      setHasMore]      = useState(false)
+  const [totalShowing, setTotalShowing] = useState(0)
 
-  // ── Initial / filter-change fetch ────────────────────────────────────────
+  const category = searchParams.get('category') || ''
+  const sortBy   = searchParams.get('sort')     || 'newest'
+  const search   = searchParams.get('search')   || ''
+
+  // Initial / filter-change fetch
   useEffect(() => {
-    let cancelled = false;
+    let cancelled = false
 
     async function fetchFirst() {
-      setLoading(true);
-      setProducts([]);
-      setOffset(0);
+      setLoading(true)
+      setProducts([])
+      setOffset(0)
 
       try {
         const result = await getProducts({
           category: category || null,
-          search: search || null,
+          search:   search   || null,
           sortBy,
           pageSize: PAGE_SIZE,
-          lastDoc: 0, // start from beginning
-        });
+          lastDoc:  0,
+        })
 
         if (!cancelled) {
-          setProducts(result.products);
-          setOffset(result.lastVisible);
-          setHasMore(result.hasMore);
-          setTotalShowing(result.products.length);
+          setProducts(result.products)
+          setOffset(result.lastVisible)
+          setHasMore(result.hasMore)
+          setTotalShowing(result.products.length)
         }
       } catch (err) {
-        console.error('Failed to fetch products:', err);
+        console.error('Failed to fetch products:', err)
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setLoading(false)
       }
     }
 
-    fetchFirst();
-    return () => {
-      cancelled = true;
-    };
-  }, [category, sortBy, search]);
+    fetchFirst()
+    return () => { cancelled = true }
+  }, [category, sortBy, search])
 
-  // ── Load more ─────────────────────────────────────────────────────────────
+  // Load more
   async function loadMore() {
-    if (loadingMore || !hasMore) return;
-    setLoadingMore(true);
+    if (loadingMore || !hasMore) return
+    setLoadingMore(true)
 
     try {
       const result = await getProducts({
         category: category || null,
-        search: search || null,
+        search:   search   || null,
         sortBy,
         pageSize: PAGE_SIZE,
-        lastDoc: offset, // pass current numeric offset
-      });
+        lastDoc:  offset,
+      })
 
-      setProducts((prev) => [...prev, ...result.products]);
-      setOffset(result.lastVisible);
-      setHasMore(result.hasMore);
-      setTotalShowing((prev) => prev + result.products.length);
+      setProducts((prev) => [...prev, ...result.products])
+      setOffset(result.lastVisible)
+      setHasMore(result.hasMore)
+      setTotalShowing((prev) => prev + result.products.length)
     } catch (err) {
-      console.error('Load more failed:', err);
+      console.error('Load more failed:', err)
     } finally {
-      setLoadingMore(false);
+      setLoadingMore(false)
     }
   }
 
-  // ── URL helpers ───────────────────────────────────────────────────────────
+  // URL helpers
   function updateParam(key, value) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value) params.set(key, value);
-    else params.delete(key);
-    router.push(`/products?${params.toString()}`);
+    const params = new URLSearchParams(searchParams.toString())
+    if (value) params.set(key, value)
+    else params.delete(key)
+    router.push(`/products?${params.toString()}`)
   }
 
   function clearFilters() {
-    router.push('/products');
+    router.push('/products')
   }
 
-  const activeFiltersCount = [category, search].filter(Boolean).length;
+  const activeFiltersCount = [category, search].filter(Boolean).length
 
-  // ── Derived label ─────────────────────────────────────────────────────────
   const pageTitle = search
     ? `Results for "${search}"`
     : category
-    ? categories.find((c) => c.value === category)?.label ?? 'Products'
-    : 'All Products';
+    ? (categories.find((c) => c.slug === category)?.name ?? 'Products')
+    : 'All Products'
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">{pageTitle}</h1>
@@ -133,6 +131,7 @@ export default function ProductsPage() {
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+
         {/* Category pills */}
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -145,7 +144,6 @@ export default function ProductsPage() {
           >
             All
           </button>
-
           {categories.map((cat) => (
             <button
               key={cat.slug}
@@ -169,11 +167,9 @@ export default function ProductsPage() {
               onClick={clearFilters}
               className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-600 font-medium"
             >
-              <X className="w-3.5 h-3.5" />
-              Clear filters
+              <X className="w-3.5 h-3.5" /> Clear filters
             </button>
           )}
-
           <div className="relative">
             <select
               value={sortBy}
@@ -181,9 +177,7 @@ export default function ProductsPage() {
               className="appearance-none bg-white border border-gray-200 rounded-xl pl-4 pr-9 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
             >
               {SORT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
@@ -214,7 +208,6 @@ export default function ProductsPage() {
         <>
           <ProductGrid products={products} />
 
-          {/* Load more button */}
           {hasMore && (
             <div className="mt-10 text-center">
               <button
@@ -223,10 +216,7 @@ export default function ProductsPage() {
                 className="inline-flex items-center gap-2 bg-white border border-gray-200 hover:border-indigo-300 text-gray-700 hover:text-indigo-600 px-8 py-3 rounded-xl font-medium transition-all disabled:opacity-60 text-sm"
               >
                 {loadingMore ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Loading...
-                  </>
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Loading...</>
                 ) : (
                   'Load more products'
                 )}
@@ -236,5 +226,14 @@ export default function ProductsPage() {
         </>
       )}
     </div>
-  );
+  )
+}
+
+// ── Outer page — provides Suspense boundary ────────────────────────────────
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={<ProductGridSkeleton count={12} />}>
+      <ProductsContent />
+    </Suspense>
+  )
 }
