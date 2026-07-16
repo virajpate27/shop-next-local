@@ -1,301 +1,363 @@
-'use client'
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { toast } from 'sonner'
+"use client";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
-  MapPin, CreditCard, Check, ChevronLeft,
-  Loader2, Plus, Banknote, ShieldCheck, Truck, Tag,
-} from 'lucide-react'
-import { useAuth } from '@/context/AuthContext'
-import { useCartStore } from '@/store/cartStore'
-import { useShipping } from '@/hooks/useShipping'
-import { calculateCartTax, getTaxBreakdown } from '@/utils/tax'
-import { getAddresses, addAddress } from '@/lib/firebase/addresses'
-import { createOrder, updateOrderPayment } from '@/lib/firebase/orders'
+  MapPin,
+  CreditCard,
+  Check,
+  ChevronLeft,
+  Loader2,
+  Plus,
+  Banknote,
+  ShieldCheck,
+  Truck,
+  Tag,
+} from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { useCartStore } from "@/store/cartStore";
+import { useShipping } from "@/hooks/useShipping";
+import { calculateCartTax, getTaxBreakdown } from "@/utils/tax";
+import { getAddresses, addAddress } from "@/lib/firebase/addresses";
+import { createOrder, updateOrderPayment } from "@/lib/firebase/orders";
 import {
   loadRazorpayScript,
   createRazorpayOrder,
   openRazorpayCheckout,
   verifyRazorpayPayment,
-} from '@/lib/razorpay'
-import { triggerEmail } from '@/lib/triggerEmail'
-import { formatPrice } from '@/utils/formatters'
+} from "@/lib/razorpay";
+import { triggerEmail } from "@/lib/triggerEmail";
+import { formatPrice } from "@/utils/formatters";
+
+import { useCoupon } from "@/hooks/useCoupon";
+import { CouponInput } from "@/components/cart/CouponInput";
+import { incrementCouponUsage } from "@/lib/firebase/coupons";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const STEPS = [
-  { id: 1, label: 'Address', icon: MapPin },
-  { id: 2, label: 'Payment', icon: CreditCard },
-  { id: 3, label: 'Review',  icon: Check },
-]
+  { id: 1, label: "Address", icon: MapPin },
+  { id: 2, label: "Payment", icon: CreditCard },
+  { id: 3, label: "Review", icon: Check },
+];
 
 const EMPTY_ADDRESS = {
-  label: 'Home',
-  fullName: '',
-  phone: '',
-  line1: '',
-  line2: '',
-  city: '',
-  state: '',
-  pincode: '',
-}
+  label: "Home",
+  fullName: "",
+  phone: "",
+  line1: "",
+  line2: "",
+  city: "",
+  state: "",
+  pincode: "",
+};
 
 const INDIAN_STATES = [
-  'Andhra Pradesh', 'Bihar', 'Delhi', 'Goa', 'Gujarat',
-  'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra',
-  'Punjab', 'Rajasthan', 'Tamil Nadu', 'Telangana',
-  'Uttar Pradesh', 'West Bengal',
-]
+  "Andhra Pradesh",
+  "Bihar",
+  "Delhi",
+  "Goa",
+  "Gujarat",
+  "Karnataka",
+  "Kerala",
+  "Madhya Pradesh",
+  "Maharashtra",
+  "Punjab",
+  "Rajasthan",
+  "Tamil Nadu",
+  "Telangana",
+  "Uttar Pradesh",
+  "West Bengal",
+];
 
 // ── Component ──────────────────────────────────────────────────────────────
 export default function CheckoutPage() {
-  const { user, profile, loading: authLoading } = useAuth()
-  const router = useRouter()
+  const { user, profile, loading: authLoading } = useAuth();
+  const router = useRouter();
+
+  const {
+    code: couponCode,
+    setCode: setCouponCode,
+    coupon,
+    discount,
+    loading: couponLoading,
+    error: couponError,
+    apply: applyCoupon,
+    remove: removeCoupon,
+    isFreeShipping: couponFreeShipping,
+  } = useCoupon();
 
   // Cart
-  const items      = useCartStore((s) => s.items)
-  const clearCart  = useCartStore((s) => s.clearCart)
+  const items = useCartStore((s) => s.items);
+  const clearCart = useCartStore((s) => s.clearCart);
 
   // Tax
-  const { subtotalBeforeTax, totalTaxAmount, totalAmount: cartTotal } = calculateCartTax(items)
-  const taxBreakdown = getTaxBreakdown(items)
+  const {
+    subtotalBeforeTax,
+    totalTaxAmount,
+    totalAmount: cartTotal,
+  } = calculateCartTax(items);
+  const taxBreakdown = getTaxBreakdown(items);
   const safeCartTotal = isNaN(cartTotal)
-    ? items.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0)
-    : cartTotal
+    ? items.reduce(
+        (s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 1),
+        0,
+      )
+    : cartTotal;
 
   // Shipping — live from admin settings
-  const { config: shippingConfig, loading: shippingLoading, getShipping } = useShipping()
-  const [paymentMethod, setPaymentMethod] = useState('razorpay')
+  const {
+    config: shippingConfig,
+    loading: shippingLoading,
+    getShipping,
+  } = useShipping();
+  const [paymentMethod, setPaymentMethod] = useState("razorpay");
 
   const { shippingCharge, shippingFree, codCharge } = getShipping(
     safeCartTotal,
     paymentMethod,
-    items
-  )
-  const total = safeCartTotal + shippingCharge + codCharge
+    items,
+  );
+  const effectiveShippingFree = shippingFree || couponFreeShipping;
+  const effectiveShipping = effectiveShippingFree ? 0 : shippingCharge;
+  const total = Math.max(
+    0,
+    safeCartTotal - discount + effectiveShipping + codCharge,
+  );
 
   // Step
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState(1);
 
   // Address state
-  const [addresses,        setAddresses]        = useState([])
-  const [loadingAddresses, setLoadingAddresses] = useState(true)
-  const [selectedAddressId, setSelectedAddressId] = useState(null)
-  const [showAddForm,      setShowAddForm]      = useState(false)
-  const [addressForm,      setAddressForm]      = useState(EMPTY_ADDRESS)
-  const [savingAddress,    setSavingAddress]    = useState(false)
+  const [addresses, setAddresses] = useState([]);
+  const [loadingAddresses, setLoadingAddresses] = useState(true);
+  const [selectedAddressId, setSelectedAddressId] = useState(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addressForm, setAddressForm] = useState(EMPTY_ADDRESS);
+  const [savingAddress, setSavingAddress] = useState(false);
 
   // Order state
-  const [placingOrder, setPlacingOrder] = useState(false)
+  const [placingOrder, setPlacingOrder] = useState(false);
 
   // ── Guards ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/login?redirect=/checkout')
+      router.push("/login?redirect=/checkout");
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, router]);
 
   useEffect(() => {
     if (!authLoading && items.length === 0) {
-      router.push('/cart')
+      router.push("/cart");
     }
-  }, [items, authLoading, router])
+  }, [items, authLoading, router]);
 
   // ── Load saved addresses ───────────────────────────────────────────────
   useEffect(() => {
-    if (!user) return
-    setLoadingAddresses(true)
+    if (!user) return;
+    setLoadingAddresses(true);
     getAddresses(user.uid).then((result) => {
-      setAddresses(result)
-      const def = result.find((a) => a.isDefault) || result[0]
-      if (def) setSelectedAddressId(def.id)
-      if (result.length === 0) setShowAddForm(true)
-      setLoadingAddresses(false)
-    })
-  }, [user])
+      setAddresses(result);
+      const def = result.find((a) => a.isDefault) || result[0];
+      if (def) setSelectedAddressId(def.id);
+      if (result.length === 0) setShowAddForm(true);
+      setLoadingAddresses(false);
+    });
+  }, [user]);
 
   // ── Address form ───────────────────────────────────────────────────────
   function handleAddressFormChange(e) {
-    const { name, value } = e.target
-    setAddressForm((prev) => ({ ...prev, [name]: value }))
+    const { name, value } = e.target;
+    setAddressForm((prev) => ({ ...prev, [name]: value }));
   }
 
   async function handleSaveNewAddress(e) {
-    e.preventDefault()
-    const { fullName, phone, line1, city, state, pincode } = addressForm
+    e.preventDefault();
+    const { fullName, phone, line1, city, state, pincode } = addressForm;
     if (!fullName || !phone || !line1 || !city || !state || !pincode) {
-      return toast.error('Please fill all required fields')
+      return toast.error("Please fill all required fields");
     }
-    if (!/^\d{10}$/.test(phone))   return toast.error('Enter a valid 10-digit phone number')
-    if (!/^\d{6}$/.test(pincode))  return toast.error('Enter a valid 6-digit pincode')
+    if (!/^\d{10}$/.test(phone))
+      return toast.error("Enter a valid 10-digit phone number");
+    if (!/^\d{6}$/.test(pincode))
+      return toast.error("Enter a valid 6-digit pincode");
 
-    setSavingAddress(true)
+    setSavingAddress(true);
     try {
-      const newAddr = await addAddress(user.uid, addressForm)
-      setAddresses((prev) => [...prev, newAddr])
-      setSelectedAddressId(newAddr.id)
-      setShowAddForm(false)
-      setAddressForm(EMPTY_ADDRESS)
-      toast.success('Address saved')
+      const newAddr = await addAddress(user.uid, addressForm);
+      setAddresses((prev) => [...prev, newAddr]);
+      setSelectedAddressId(newAddr.id);
+      setShowAddForm(false);
+      setAddressForm(EMPTY_ADDRESS);
+      toast.success("Address saved");
     } catch {
-      toast.error('Failed to save address')
+      toast.error("Failed to save address");
     } finally {
-      setSavingAddress(false)
+      setSavingAddress(false);
     }
   }
 
-  const selectedAddress = addresses.find((a) => a.id === selectedAddressId)
+  const selectedAddress = addresses.find((a) => a.id === selectedAddressId);
 
   // ── Place order ────────────────────────────────────────────────────────
   async function handlePlaceOrder() {
-    if (!selectedAddress) return toast.error('Please select a delivery address')
-    setPlacingOrder(true)
+    if (!selectedAddress)
+      return toast.error("Please select a delivery address");
+    setPlacingOrder(true);
 
     const orderItems = items.map((i) => ({
       productId: i.productId,
-      name:      i.name,
-      price:     i.price,
-      image:     i.image,
-      quantity:  i.quantity,
-      taxRate:   i.taxRate  || 0,
-      taxType:   i.taxType  || 'inclusive',
-    }))
+      name: i.name,
+      price: i.price,
+      image: i.image,
+      quantity: i.quantity,
+      taxRate: i.taxRate || 0,
+      taxType: i.taxType || "inclusive",
+    }));
 
     const baseOrderData = {
-      userId:          user.uid,
-      items:           orderItems,
-      subtotal:        subtotalBeforeTax,
-      totalTax:        totalTaxAmount,
+      userId: user.uid,
+      items: orderItems,
+      subtotal: subtotalBeforeTax,
+      totalTax: totalTaxAmount,
       taxBreakdown,
-      shipping:        shippingCharge,
-      codFee:          codCharge,
+      shipping: effectiveShipping,
+      codFee: codCharge,
+      discount,
+      couponCode: coupon?.code || null,
+      couponId: coupon?.id || null,
       total,
       paymentMethod,
       shippingAddress: selectedAddress,
-      customerEmail:   user.email,
-    }
+      customerEmail: user.email,
+    };
 
     try {
       // ── COD flow ───────────────────────────────────────────────────────
-      if (paymentMethod === 'cod') {
-        const orderId = await createOrder(baseOrderData)
-        clearCart()
+      if (paymentMethod === "cod") {
+        const orderId = await createOrder(baseOrderData);
+        clearCart();
         // Decrement stock via API route
-        await fetch('/api/orders/confirm', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        await fetch("/api/orders/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ orderId, items: orderItems }),
-        })
+        });
 
         // Send emails (non-blocking)
         Promise.allSettled([
-          triggerEmail('order_confirmed', user.email, {
-            order: { ...baseOrderData, status: 'confirmed' },
+          triggerEmail("order_confirmed", user.email, {
+            order: { ...baseOrderData, status: "confirmed" },
             orderId,
           }),
-          triggerEmail('admin_new_order', process.env.NEXT_PUBLIC_ADMIN_EMAIL, {
+          triggerEmail("admin_new_order", process.env.NEXT_PUBLIC_ADMIN_EMAIL, {
             order: baseOrderData,
             orderId,
           }),
-        ])
+        ]);
 
-       
-        toast.success('Order placed successfully!')
-        router.push(`/orders/${orderId}?success=true`)
-        return
+        toast.success("Order placed successfully!");
+        if (coupon?.id) {
+          incrementCouponUsage(coupon.id).catch(console.error);
+        }
+        router.push(`/orders/${orderId}?success=true`);
+        return;
       }
 
       // ── Razorpay flow ──────────────────────────────────────────────────
-      const scriptLoaded = await loadRazorpayScript()
+      const scriptLoaded = await loadRazorpayScript();
       if (!scriptLoaded) {
-        toast.error('Failed to load payment gateway. Check your connection.')
-        setPlacingOrder(false)
-        return
+        toast.error("Failed to load payment gateway. Check your connection.");
+        setPlacingOrder(false);
+        return;
       }
 
       // 1. Create order in Firestore (status: pending)
-      const orderId = await createOrder(baseOrderData)
+      const orderId = await createOrder(baseOrderData);
 
       // 2. Create Razorpay order on server
-      const rzpOrder = await createRazorpayOrder(total, orderId)
+      const rzpOrder = await createRazorpayOrder(total, orderId);
 
       // 3. Open Razorpay modal
-      let paymentResponse
+      let paymentResponse;
       try {
         paymentResponse = await openRazorpayCheckout({
-          orderId:      rzpOrder.orderId,
-          amount:       rzpOrder.amount,
-          currency:     rzpOrder.currency,
-          keyId:        rzpOrder.keyId,
+          orderId: rzpOrder.orderId,
+          amount: rzpOrder.amount,
+          currency: rzpOrder.currency,
+          keyId: rzpOrder.keyId,
           customerInfo: {
-            name:  selectedAddress.fullName,
+            name: selectedAddress.fullName,
             email: user.email,
             phone: selectedAddress.phone,
           },
-        })
+        });
       } catch (err) {
         // User cancelled or payment failed
-        if (!err.message?.includes('cancelled')) {
-          triggerEmail('payment_failed', user.email, {
-            displayName: profile?.displayName || 'there',
+        if (!err.message?.includes("cancelled")) {
+          triggerEmail("payment_failed", user.email, {
+            displayName: profile?.displayName || "there",
             orderId,
             amount: total,
-          })
+          });
         }
-        toast.error(err.message || 'Payment was not completed')
-        setPlacingOrder(false)
-        return
+        toast.error(err.message || "Payment was not completed");
+        setPlacingOrder(false);
+        return;
       }
 
       // 4. Verify signature server-side
-      const verification = await verifyRazorpayPayment(paymentResponse)
+      const verification = await verifyRazorpayPayment(paymentResponse);
       if (!verification.verified) {
-        toast.error('Payment verification failed. Contact support if money was deducted.')
-        setPlacingOrder(false)
-        return
+        toast.error(
+          "Payment verification failed. Contact support if money was deducted.",
+        );
+        setPlacingOrder(false);
+        return;
       }
 
       // 5. Mark order as confirmed in Firestore
       await updateOrderPayment(orderId, {
-        razorpayOrderId:  paymentResponse.razorpay_order_id,
+        razorpayOrderId: paymentResponse.razorpay_order_id,
         razorpayPaymentId: paymentResponse.razorpay_payment_id,
-      })
+      });
 
       // 6. Decrement stock
-      await fetch('/api/orders/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/orders/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId, items: orderItems }),
-      })
+      });
 
       // 7. Send emails (non-blocking)
       Promise.allSettled([
-        triggerEmail('order_confirmed', user.email, {
-          order: { ...baseOrderData, status: 'confirmed' },
+        triggerEmail("order_confirmed", user.email, {
+          order: { ...baseOrderData, status: "confirmed" },
           orderId,
         }),
-        triggerEmail('admin_new_order', process.env.NEXT_PUBLIC_ADMIN_EMAIL, {
+        triggerEmail("admin_new_order", process.env.NEXT_PUBLIC_ADMIN_EMAIL, {
           order: baseOrderData,
           orderId,
         }),
-      ])
+      ]);
 
-      clearCart()
-      toast.success('Payment successful!')
-      router.push(`/orders/${orderId}?success=true`)
-
+      clearCart();
+      toast.success("Payment successful!");
+      if (coupon?.id) {
+  incrementCouponUsage(coupon.id).catch(console.error)
+}
+      router.push(`/orders/${orderId}?success=true`);
     } catch (err) {
-      console.error('Order placement failed:', err)
-      toast.error('Something went wrong. Please try again.')
+      console.error("Order placement failed:", err);
+      toast.error("Something went wrong. Please try again.");
     } finally {
-      setPlacingOrder(false)
+      setPlacingOrder(false);
     }
   }
 
-  if (authLoading || !user || items.length === 0) return null
+  if (authLoading || !user || items.length === 0) return null;
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-
       {/* ── Step indicator ──────────────────────────────────────────── */}
       <div className="flex items-center justify-center gap-2 mb-10">
         {STEPS.map((s, idx) => (
@@ -304,32 +366,36 @@ export default function CheckoutPage() {
               <div
                 className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
                   step === s.id
-                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                    ? "bg-indigo-600 border-indigo-600 text-white"
                     : step > s.id
-                    ? 'bg-green-50 border-green-500 text-green-600'
-                    : 'bg-white border-gray-200 text-gray-300'
+                      ? "bg-green-50 border-green-500 text-green-600"
+                      : "bg-white border-gray-200 text-gray-300"
                 }`}
               >
-                {step > s.id
-                  ? <Check className="w-4 h-4" />
-                  : <s.icon className="w-4 h-4" />}
+                {step > s.id ? (
+                  <Check className="w-4 h-4" />
+                ) : (
+                  <s.icon className="w-4 h-4" />
+                )}
               </div>
-              <span className={`text-xs font-medium ${step === s.id ? 'text-indigo-600' : 'text-gray-400'}`}>
+              <span
+                className={`text-xs font-medium ${step === s.id ? "text-indigo-600" : "text-gray-400"}`}
+              >
                 {s.label}
               </span>
             </div>
             {idx < STEPS.length - 1 && (
-              <div className={`w-16 sm:w-24 h-0.5 mx-2 mb-4 ${step > s.id ? 'bg-green-400' : 'bg-gray-200'}`} />
+              <div
+                className={`w-16 sm:w-24 h-0.5 mx-2 mb-4 ${step > s.id ? "bg-green-400" : "bg-gray-200"}`}
+              />
             )}
           </div>
         ))}
       </div>
 
       <div className="grid lg:grid-cols-3 gap-8">
-
         {/* ── Main content ─────────────────────────────────────────── */}
         <div className="lg:col-span-2">
-
           {/* ════ STEP 1: Address ════ */}
           {step === 1 && (
             <div className="bg-white border border-gray-100 rounded-2xl p-6">
@@ -352,8 +418,8 @@ export default function CheckoutPage() {
                           key={addr.id}
                           className={`flex items-start gap-3 border-2 rounded-xl p-4 cursor-pointer transition-colors ${
                             selectedAddressId === addr.id
-                              ? 'border-indigo-500 bg-indigo-50/50'
-                              : 'border-gray-200 hover:border-gray-300'
+                              ? "border-indigo-500 bg-indigo-50/50"
+                              : "border-gray-200 hover:border-gray-300"
                           }`}
                         >
                           <input
@@ -368,13 +434,18 @@ export default function CheckoutPage() {
                               <span className="text-xs font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
                                 {addr.label}
                               </span>
-                              <span className="text-sm font-medium text-gray-900">{addr.fullName}</span>
+                              <span className="text-sm font-medium text-gray-900">
+                                {addr.fullName}
+                              </span>
                             </div>
                             <p className="text-sm text-gray-500">
-                              {addr.line1}{addr.line2 ? `, ${addr.line2}` : ''},{' '}
-                              {addr.city}, {addr.state} — {addr.pincode}
+                              {addr.line1}
+                              {addr.line2 ? `, ${addr.line2}` : ""}, {addr.city}
+                              , {addr.state} — {addr.pincode}
                             </p>
-                            <p className="text-xs text-gray-400 mt-0.5">{addr.phone}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {addr.phone}
+                            </p>
                           </div>
                         </label>
                       ))}
@@ -391,7 +462,10 @@ export default function CheckoutPage() {
                     </button>
                   ) : (
                     /* New address form */
-                    <form onSubmit={handleSaveNewAddress} className="space-y-4 border-t border-gray-100 pt-5">
+                    <form
+                      onSubmit={handleSaveNewAddress}
+                      className="space-y-4 border-t border-gray-100 pt-5"
+                    >
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -469,7 +543,9 @@ export default function CheckoutPage() {
                           >
                             <option value="">Select</option>
                             {INDIAN_STATES.map((s) => (
-                              <option key={s} value={s}>{s}</option>
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
                             ))}
                           </select>
                         </div>
@@ -502,7 +578,9 @@ export default function CheckoutPage() {
                           disabled={savingAddress}
                           className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-medium transition-colors text-sm disabled:opacity-60 flex items-center justify-center gap-2"
                         >
-                          {savingAddress && <Loader2 className="w-4 h-4 animate-spin" />}
+                          {savingAddress && (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          )}
                           Save address
                         </button>
                       </div>
@@ -513,8 +591,11 @@ export default function CheckoutPage() {
                   {addresses.length > 0 && (
                     <button
                       onClick={() => {
-                        if (!selectedAddressId) return toast.error('Please select a delivery address')
-                        setStep(2)
+                        if (!selectedAddressId)
+                          return toast.error(
+                            "Please select a delivery address",
+                          );
+                        setStep(2);
                       }}
                       className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3.5 rounded-xl transition-colors"
                     >
@@ -545,16 +626,16 @@ export default function CheckoutPage() {
                 {/* Razorpay */}
                 <label
                   className={`flex items-start gap-3 border-2 rounded-xl p-4 cursor-pointer transition-colors ${
-                    paymentMethod === 'razorpay'
-                      ? 'border-indigo-500 bg-indigo-50/50'
-                      : 'border-gray-200 hover:border-gray-300'
+                    paymentMethod === "razorpay"
+                      ? "border-indigo-500 bg-indigo-50/50"
+                      : "border-gray-200 hover:border-gray-300"
                   }`}
                 >
                   <input
                     type="radio"
                     name="paymentMethod"
-                    checked={paymentMethod === 'razorpay'}
-                    onChange={() => setPaymentMethod('razorpay')}
+                    checked={paymentMethod === "razorpay"}
+                    onChange={() => setPaymentMethod("razorpay")}
                     className="mt-1 accent-indigo-600"
                   />
                   <div className="flex-1">
@@ -568,8 +649,11 @@ export default function CheckoutPage() {
                       UPI, credit/debit card, net banking, wallets
                     </p>
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
-                      {['UPI', 'Cards', 'NetBanking', 'Wallets'].map((m) => (
-                        <span key={m} className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded">
+                      {["UPI", "Cards", "NetBanking", "Wallets"].map((m) => (
+                        <span
+                          key={m}
+                          className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded"
+                        >
                           {m}
                         </span>
                       ))}
@@ -581,16 +665,16 @@ export default function CheckoutPage() {
                 {!shippingLoading && shippingConfig.codEnabled && (
                   <label
                     className={`flex items-start gap-3 border-2 rounded-xl p-4 cursor-pointer transition-colors ${
-                      paymentMethod === 'cod'
-                        ? 'border-indigo-500 bg-indigo-50/50'
-                        : 'border-gray-200 hover:border-gray-300'
+                      paymentMethod === "cod"
+                        ? "border-indigo-500 bg-indigo-50/50"
+                        : "border-gray-200 hover:border-gray-300"
                     }`}
                   >
                     <input
                       type="radio"
                       name="paymentMethod"
-                      checked={paymentMethod === 'cod'}
-                      onChange={() => setPaymentMethod('cod')}
+                      checked={paymentMethod === "cod"}
+                      onChange={() => setPaymentMethod("cod")}
                       className="mt-1 accent-indigo-600"
                     />
                     <div className="flex-1">
@@ -609,10 +693,11 @@ export default function CheckoutPage() {
                           {shippingConfig.codFeeWaiverEnabled &&
                           shippingConfig.codFreeAbove > 0 &&
                           safeCartTotal >= shippingConfig.codFreeAbove
-                            ? ' — waived for this order ✓'
-                            : shippingConfig.codFeeWaiverEnabled && shippingConfig.codFreeAbove > 0
-                            ? ` (waived above ${formatPrice(shippingConfig.codFreeAbove)})`
-                            : ''}
+                            ? " — waived for this order ✓"
+                            : shippingConfig.codFeeWaiverEnabled &&
+                                shippingConfig.codFreeAbove > 0
+                              ? ` (waived above ${formatPrice(shippingConfig.codFreeAbove)})`
+                              : ""}
                         </p>
                       )}
                       {shippingConfig.codFee === 0 && (
@@ -644,7 +729,9 @@ export default function CheckoutPage() {
                 <ChevronLeft className="w-4 h-4" /> Back to payment
               </button>
 
-              <h2 className="font-bold text-gray-900 mb-5">Review your order</h2>
+              <h2 className="font-bold text-gray-900 mb-5">
+                Review your order
+              </h2>
 
               {/* Address summary */}
               <div className="border border-gray-100 rounded-xl p-4 mb-4">
@@ -659,12 +746,16 @@ export default function CheckoutPage() {
                     Change
                   </button>
                 </div>
-                <p className="text-sm font-medium text-gray-900">{selectedAddress?.fullName}</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {selectedAddress?.fullName}
+                </p>
                 <p className="text-sm text-gray-500">
-                  {selectedAddress?.line1}, {selectedAddress?.city},{' '}
+                  {selectedAddress?.line1}, {selectedAddress?.city},{" "}
                   {selectedAddress?.state} — {selectedAddress?.pincode}
                 </p>
-                <p className="text-xs text-gray-400 mt-0.5">{selectedAddress?.phone}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {selectedAddress?.phone}
+                </p>
               </div>
 
               {/* Payment summary */}
@@ -681,10 +772,16 @@ export default function CheckoutPage() {
                   </button>
                 </div>
                 <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
-                  {paymentMethod === 'razorpay' ? (
-                    <><ShieldCheck className="w-4 h-4 text-indigo-600" /> Pay online via Razorpay</>
+                  {paymentMethod === "razorpay" ? (
+                    <>
+                      <ShieldCheck className="w-4 h-4 text-indigo-600" /> Pay
+                      online via Razorpay
+                    </>
                   ) : (
-                    <><Banknote className="w-4 h-4 text-green-600" /> Cash on Delivery</>
+                    <>
+                      <Banknote className="w-4 h-4 text-green-600" /> Cash on
+                      Delivery
+                    </>
                   )}
                 </p>
               </div>
@@ -692,13 +789,16 @@ export default function CheckoutPage() {
               {/* Items */}
               <div className="border border-gray-100 rounded-xl p-4 mb-6">
                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide block mb-3">
-                  {items.length} item{items.length !== 1 ? 's' : ''}
+                  {items.length} item{items.length !== 1 ? "s" : ""}
                 </span>
                 <div className="space-y-2">
                   {items.map((item) => (
-                    <div key={item.productId} className="flex justify-between text-sm">
+                    <div
+                      key={item.productId}
+                      className="flex justify-between text-sm"
+                    >
                       <span className="text-gray-700 flex-1 mr-4 line-clamp-1">
-                        {item.name}{' '}
+                        {item.name}{" "}
                         <span className="text-gray-400">× {item.quantity}</span>
                       </span>
                       <span className="font-medium text-gray-900 flex-shrink-0">
@@ -709,6 +809,21 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
+              <div className="mb-5">
+  <CouponInput
+    code={couponCode}
+    setCode={setCouponCode}
+    coupon={coupon}
+    discount={discount}
+    loading={couponLoading}
+    error={couponError}
+    onApply={applyCoupon}
+    onRemove={removeCoupon}
+    cartTotal={safeCartTotal}
+    isFreeShipping={couponFreeShipping}
+  />
+</div>
+
               {/* Place order button */}
               <button
                 onClick={handlePlaceOrder}
@@ -718,9 +833,11 @@ export default function CheckoutPage() {
                 {placingOrder ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    {paymentMethod === 'razorpay' ? 'Processing payment...' : 'Placing order...'}
+                    {paymentMethod === "razorpay"
+                      ? "Processing payment..."
+                      : "Placing order..."}
                   </>
-                ) : paymentMethod === 'razorpay' ? (
+                ) : paymentMethod === "razorpay" ? (
                   `Pay ${formatPrice(total)}`
                 ) : (
                   `Place order — ${formatPrice(total)}`
@@ -736,21 +853,20 @@ export default function CheckoutPage() {
             <h2 className="font-bold text-gray-900 mb-5">Order summary</h2>
 
             <div className="space-y-3 mb-5">
-
               {/* Subtotal before tax */}
               {totalTaxAmount > 0 ? (
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">
-                    Items ({items.length})
+                  <span className="text-gray-500">Items ({items.length})</span>
+                  <span className="text-gray-900">
+                    {formatPrice(subtotalBeforeTax)}
                   </span>
-                  <span className="text-gray-900">{formatPrice(subtotalBeforeTax)}</span>
                 </div>
               ) : (
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">
-                    Items ({items.length})
+                  <span className="text-gray-500">Items ({items.length})</span>
+                  <span className="text-gray-900">
+                    {formatPrice(safeCartTotal)}
                   </span>
-                  <span className="text-gray-900">{formatPrice(safeCartTotal)}</span>
                 </div>
               )}
 
@@ -760,31 +876,41 @@ export default function CheckoutPage() {
                   <span className="text-gray-500 flex items-center gap-1">
                     <Tag className="w-3 h-3" /> GST {tb.rate}%
                   </span>
-                  <span className="text-gray-900">{formatPrice(tb.taxAmount)}</span>
+                  <span className="text-gray-900">
+                    {formatPrice(tb.taxAmount)}
+                  </span>
                 </div>
               ))}
 
+              {coupon && discount > 0 && (
+  <div className="flex justify-between text-sm">
+    <span className="text-green-600 flex items-center gap-1.5">
+      <Tag className="w-3 h-3" />
+      {coupon.code}
+    </span>
+    <span className="text-green-600 font-semibold">−{formatPrice(discount)}</span>
+  </div>
+)}
+
               {/* Shipping */}
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500 flex items-center gap-1.5">
-                  <Truck className="w-3.5 h-3.5" /> Shipping
-                </span>
-                <span className="font-medium text-gray-900">
-                  {shippingLoading ? (
-                    <span className="text-gray-300">—</span>
-                  ) : shippingFree ? (
-                    <span className="text-green-600">Free</span>
-                  ) : (
-                    formatPrice(shippingCharge)
-                  )}
-                </span>
-              </div>
+  <span className="text-gray-500 flex items-center gap-1.5">
+    <Truck className="w-3.5 h-3.5" /> Shipping
+  </span>
+  <span className="font-medium text-gray-900">
+    {effectiveShippingFree
+      ? <span className="text-green-600">Free</span>
+      : formatPrice(effectiveShipping)}
+  </span>
+</div>
 
               {/* COD fee */}
               {codCharge > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">COD handling fee</span>
-                  <span className="font-medium text-gray-900">{formatPrice(codCharge)}</span>
+                  <span className="font-medium text-gray-900">
+                    {formatPrice(codCharge)}
+                  </span>
                 </div>
               )}
             </div>
@@ -792,7 +918,9 @@ export default function CheckoutPage() {
             {/* Grand total */}
             <div className="flex justify-between items-baseline py-4 border-t border-gray-100">
               <span className="font-semibold text-gray-900">Total</span>
-              <span className="text-xl font-bold text-gray-900">{formatPrice(total)}</span>
+              <span className="text-xl font-bold text-gray-900">
+                {formatPrice(total)}
+              </span>
             </div>
 
             {/* Tax note */}
@@ -811,8 +939,7 @@ export default function CheckoutPage() {
             </div>
           </div>
         </div>
-
       </div>
     </div>
-  )
+  );
 }

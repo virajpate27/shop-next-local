@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
-import { LayoutDashboard, Package, ShoppingBag, Tag, Truck, LogOut } from 'lucide-react'
+import { LayoutDashboard, Package, ShoppingBag, Tag, Truck, Ticket, LogOut } from 'lucide-react'
+
 import { logout } from '@/lib/firebase/auth';
 
 const NAV = [
@@ -13,6 +14,7 @@ const NAV = [
   { href: '/admin/orders', icon: ShoppingBag, label: 'Orders' },
   { href: '/admin/categories', icon: Tag, label: 'Categories' }, 
   { href: '/admin/shipping', icon: Truck,  label: 'Shipping'   },
+  { href: '/admin/coupons',    icon: Ticket,          label: 'Coupons'    },
 ];
 
 export default function AdminLayout({ children }) {
