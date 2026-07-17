@@ -257,7 +257,11 @@ export default function CheckoutPage() {
 
         toast.success("Order placed successfully!");
         if (coupon?.id) {
-          incrementCouponUsage(coupon.id).catch(console.error);
+          fetch("/api/coupons/use", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ couponId: coupon.id }),
+          }).catch(console.error);
         }
         router.push(`/orders/${orderId}?success=true`);
         return;
@@ -343,8 +347,8 @@ export default function CheckoutPage() {
       clearCart();
       toast.success("Payment successful!");
       if (coupon?.id) {
-  incrementCouponUsage(coupon.id).catch(console.error)
-}
+        incrementCouponUsage(coupon.id).catch(console.error);
+      }
       router.push(`/orders/${orderId}?success=true`);
     } catch (err) {
       console.error("Order placement failed:", err);
@@ -810,19 +814,19 @@ export default function CheckoutPage() {
               </div>
 
               <div className="mb-5">
-  <CouponInput
-    code={couponCode}
-    setCode={setCouponCode}
-    coupon={coupon}
-    discount={discount}
-    loading={couponLoading}
-    error={couponError}
-    onApply={applyCoupon}
-    onRemove={removeCoupon}
-    cartTotal={safeCartTotal}
-    isFreeShipping={couponFreeShipping}
-  />
-</div>
+                <CouponInput
+                  code={couponCode}
+                  setCode={setCouponCode}
+                  coupon={coupon}
+                  discount={discount}
+                  loading={couponLoading}
+                  error={couponError}
+                  onApply={applyCoupon}
+                  onRemove={removeCoupon}
+                  cartTotal={safeCartTotal}
+                  isFreeShipping={couponFreeShipping}
+                />
+              </div>
 
               {/* Place order button */}
               <button
@@ -883,26 +887,30 @@ export default function CheckoutPage() {
               ))}
 
               {coupon && discount > 0 && (
-  <div className="flex justify-between text-sm">
-    <span className="text-green-600 flex items-center gap-1.5">
-      <Tag className="w-3 h-3" />
-      {coupon.code}
-    </span>
-    <span className="text-green-600 font-semibold">−{formatPrice(discount)}</span>
-  </div>
-)}
+                <div className="flex justify-between text-sm">
+                  <span className="text-green-600 flex items-center gap-1.5">
+                    <Tag className="w-3 h-3" />
+                    {coupon.code}
+                  </span>
+                  <span className="text-green-600 font-semibold">
+                    −{formatPrice(discount)}
+                  </span>
+                </div>
+              )}
 
               {/* Shipping */}
               <div className="flex justify-between text-sm">
-  <span className="text-gray-500 flex items-center gap-1.5">
-    <Truck className="w-3.5 h-3.5" /> Shipping
-  </span>
-  <span className="font-medium text-gray-900">
-    {effectiveShippingFree
-      ? <span className="text-green-600">Free</span>
-      : formatPrice(effectiveShipping)}
-  </span>
-</div>
+                <span className="text-gray-500 flex items-center gap-1.5">
+                  <Truck className="w-3.5 h-3.5" /> Shipping
+                </span>
+                <span className="font-medium text-gray-900">
+                  {effectiveShippingFree ? (
+                    <span className="text-green-600">Free</span>
+                  ) : (
+                    formatPrice(effectiveShipping)
+                  )}
+                </span>
+              </div>
 
               {/* COD fee */}
               {codCharge > 0 && (
