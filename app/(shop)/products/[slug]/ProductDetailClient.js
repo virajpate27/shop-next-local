@@ -1,108 +1,123 @@
 // src/app/(shop)/products/[slug]/ProductDetailClient.js
-'use client';
-import { useState } from 'react';
-import Image from 'next/image';
-import { ReviewSection } from '@/components/products/ReviewSection'
-import Link from 'next/link';
+'use client'
+import { useState } from 'react'
+import Image from 'next/image'
+import Link from 'next/link'
 import {
-  ShoppingCart,
-  Star,
-  Truck,
-  Shield,
-  RefreshCw,
-  ChevronLeft,
-  Minus,
-  Plus,
-  Heart,
-  Share2,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { useCartStore } from '@/store/cartStore';
-import { ProductCard } from '@/components/products/ProductCard';
-import { formatPrice, getDiscountPercent } from '@/utils/formatters';
-import { getOptimizedUrl } from '@/lib/cloudinary';
-import { calculateTax } from '@/utils/tax'
+  ShoppingCart, Star, Truck, Shield,
+  RefreshCw, Minus, Plus, Heart,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import { useCartStore } from '@/store/cartStore'
+import { useWishlist } from '@/hooks/useWishlist'
+import { ProductCard } from '@/components/products/ProductCard'
+import { ReviewSection } from '@/components/products/ReviewSection'
 import { TaxBadge } from '@/components/products/TaxBadge'
+import { VariationSelector } from '@/components/products/VariationSelector'
+import { formatPrice, getDiscountPercent } from '@/utils/formatters'
+import { calculateTax } from '@/utils/tax'
+import { getOptimizedUrl } from '@/lib/cloudinary'
+import { findVariant, getVariantLabel } from '@/utils/variations'
 
 export function ProductDetailClient({ product, related }) {
-  const addItem = useCartStore((s) => s.addItem);
-  const [selectedImage, setSelectedImage] = useState(0);
-  const [quantity, setQuantity] = useState(1);
+  const addItem    = useCartStore((s) => s.addItem)
+  const { toggle, isWishlisted } = useWishlist()
 
-  const taxDetails = calculateTax(
-    product.price,
-    product.taxRate || 0,
-    product.taxType || 'inclusive',
-    1
-  )
+  const [selectedImage,  setSelectedImage]  = useState(0)
+  const [quantity,       setQuantity]       = useState(1)
+  const [selectedOptions, setSelectedOptions] = useState({})
 
-  const discount = getDiscountPercent(product.price, product.comparePrice);
+  const hasVariations = product.hasVariations && product.variationTypes?.length > 0
+
+  // Find the currently selected variant
+  const selectedVariant = hasVariations
+    ? findVariant(product.variants, selectedOptions)
+    : null
+
+  // Effective price — variant price overrides base price
+  const effectivePrice = selectedVariant?.price || product.price
+  const effectiveStock = hasVariations
+    ? (selectedVariant?.stock ?? 0)
+    : product.stock
+
+  // Have all variation types been selected?
+  const allSelected = hasVariations
+    ? product.variationTypes.every((vt) => selectedOptions[vt.id])
+    : true
+
+  const discount = getDiscountPercent(effectivePrice, product.comparePrice)
+  const taxDetails = calculateTax(effectivePrice, product.taxRate || 0, product.taxType || 'inclusive', 1)
+  const saved = isWishlisted(product.id)
+
+  // Variant images — use variant image if set, otherwise product images
+  const displayImage = (selectedVariant?.image || product.images?.[selectedImage] || '')
 
   function handleAddToCart() {
-    if (product.stock === 0) return;
-    addItem({
-      productId: product.id,
-      name: product.name,
-      price: product.price,
-      image: product.images?.[0] || '',
-      stock: product.stock,
-      taxRate: product.taxRate || 0,
-      taxType: product.taxType || 'inclusive',
-      category:  product.category || '',
-      slug:      product.slug     || '',
-    });
-    // addItem increments by 1 each call — loop for quantity
-    for (let i = 1; i < quantity; i++) {
-      addItem({
-        productId: product.id,
-        name: product.name,
-        price: product.price,
-        image: product.images?.[0] || '',
-        stock: product.stock,
-      });
+    if (hasVariations && !allSelected) {
+      toast.error('Please select all options before adding to cart')
+      return
     }
-    toast.success(`${quantity} × ${product.name} added to cart`);
+    if (effectiveStock === 0) return
+
+    const variantLabel = hasVariations
+      ? getVariantLabel(selectedVariant, product.variationTypes)
+      : ''
+
+    addItem({
+      productId:       product.id,
+      name:            product.name,
+      variantId:       selectedVariant?.id || null,
+      variantLabel:    variantLabel || null,
+      selectedOptions: hasVariations ? selectedOptions : null,
+      price:           effectivePrice,
+      image:           displayImage,
+      stock:           effectiveStock,
+      taxRate:         product.taxRate  || 0,
+      taxType:         product.taxType  || 'inclusive',
+      category:        product.category || '',
+      slug:            product.slug     || '',
+    })
+    toast.success(
+      variantLabel
+        ? `${product.name} (${variantLabel}) added to cart`
+        : `${product.name} added to cart`
+    )
   }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-gray-400 mb-8">
-        <Link href="/" className="hover:text-gray-600">
-          Home
-        </Link>
+        <Link href="/" className="hover:text-gray-600">Home</Link>
         <span>/</span>
-        <Link href="/products" className="hover:text-gray-600">
-          Products
-        </Link>
+        <Link href="/products" className="hover:text-gray-600">Products</Link>
         <span>/</span>
-        <Link
-          href={`/products?category=${product.category}`}
-          className="hover:text-gray-600 capitalize"
-        >
+        <Link href={`/products?category=${product.category}`} className="hover:text-gray-600 capitalize">
           {product.category}
         </Link>
         <span>/</span>
-        <span className="text-gray-700 font-medium truncate max-w-[200px]">
-          {product.name}
-        </span>
+        <span className="text-gray-700 font-medium truncate max-w-[200px]">{product.name}</span>
       </nav>
 
-      {/* Main grid */}
       <div className="grid lg:grid-cols-2 gap-10 mb-16">
-        {/* Images */}
+
+        {/* ── Images ──────────────────────────────────────────────── */}
         <div>
           <div className="relative aspect-square bg-gray-50 rounded-2xl overflow-hidden mb-4">
-            <Image
-              src={getOptimizedUrl(product.images?.[selectedImage], {
-                width: 800,
-                height: 800,
-              })}
-              alt={product.name}
-              fill
-              className="object-cover"
-              priority
-            />
+            {displayImage ? (
+              <Image
+                src={getOptimizedUrl(displayImage, { width: 800, height: 800 })}
+                alt={product.name}
+                fill
+                className="object-cover"
+                priority
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-gray-300">
+                <ShoppingCart className="w-16 h-16" />
+              </div>
+            )}
             {discount && (
               <div className="absolute top-4 left-4 bg-red-500 text-white text-sm font-bold px-3 py-1 rounded-full">
                 -{discount}% OFF
@@ -117,14 +132,15 @@ export function ProductDetailClient({ product, related }) {
                 <button
                   key={i}
                   onClick={() => setSelectedImage(i)}
-                  className={`relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden border-2 transition-all ${selectedImage === i
+                  className={`relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden border-2 transition-all ${
+                    selectedImage === i
                       ? 'border-indigo-500'
                       : 'border-gray-200 hover:border-gray-300'
-                    }`}
+                  }`}
                 >
                   <Image
                     src={getOptimizedUrl(img, { width: 160, height: 160 })}
-                    alt={`${product.name} ${i + 1}`}
+                    alt=""
                     fill
                     className="object-cover"
                   />
@@ -134,7 +150,7 @@ export function ProductDetailClient({ product, related }) {
           )}
         </div>
 
-        {/* Info */}
+        {/* ── Info ────────────────────────────────────────────────── */}
         <div>
           <p className="text-sm text-indigo-600 font-medium uppercase tracking-wide mb-2">
             {product.category}
@@ -151,10 +167,11 @@ export function ProductDetailClient({ product, related }) {
                 {[1, 2, 3, 4, 5].map((s) => (
                   <Star
                     key={s}
-                    className={`w-4 h-4 ${s <= Math.round(product.rating)
+                    className={`w-4 h-4 ${
+                      s <= Math.round(product.rating)
                         ? 'fill-amber-400 text-amber-400'
                         : 'fill-gray-200 text-gray-200'
-                      }`}
+                    }`}
                   />
                 ))}
               </div>
@@ -170,22 +187,21 @@ export function ProductDetailClient({ product, related }) {
           {/* Price */}
           <div className="flex items-baseline gap-3 mb-2">
             <span className="text-3xl font-bold text-gray-900">
-              {formatPrice(product.price)}
+              {formatPrice(effectivePrice)}
             </span>
-            {product.comparePrice > product.price && (
+            {product.comparePrice > effectivePrice && (
               <span className="text-lg text-gray-400 line-through">
                 {formatPrice(product.comparePrice)}
               </span>
             )}
             {discount && (
               <span className="bg-green-50 text-green-700 text-sm font-semibold px-2.5 py-0.5 rounded-lg">
-                Save {formatPrice(product.comparePrice - product.price)}
+                Save {formatPrice(product.comparePrice - effectivePrice)}
               </span>
             )}
           </div>
 
-
-          {/* Tax info line */}
+          {/* Tax info */}
           <div className="flex items-center gap-2 mb-5">
             {product.taxRate > 0 ? (
               <>
@@ -193,14 +209,10 @@ export function ProductDetailClient({ product, related }) {
                 {product.taxType === 'inclusive' ? (
                   <span className="text-xs text-gray-400">
                     Incl. {formatPrice(taxDetails.taxAmount)} GST
-                    ({formatPrice(taxDetails.basePrice)} + tax)
                   </span>
                 ) : (
                   <span className="text-xs text-gray-400">
-                    + {formatPrice(taxDetails.taxAmount)} GST →{' '}
-                    <span className="font-medium text-gray-700">
-                      Total {formatPrice(taxDetails.totalPrice)}
-                    </span>
+                    +{formatPrice(taxDetails.taxAmount)} GST → Total {formatPrice(taxDetails.totalPrice)}
                   </span>
                 )}
               </>
@@ -210,18 +222,39 @@ export function ProductDetailClient({ product, related }) {
           </div>
 
           {/* Description */}
-          <p className="text-gray-600 leading-relaxed mb-6">
-            {product.description}
-          </p>
+          <p className="text-gray-600 leading-relaxed mb-6">{product.description}</p>
+
+          {/* ── Variation selector ─────────────────────────────── */}
+          {hasVariations && (
+            <div className="mb-6">
+              <VariationSelector
+                variationTypes={product.variationTypes}
+                variants={product.variants}
+                selectedOptions={selectedOptions}
+                onChange={setSelectedOptions}
+              />
+
+              {/* Selected variant info */}
+              {allSelected && selectedVariant && (
+                <div className="mt-4 p-3 bg-gray-50 rounded-xl flex items-center justify-between">
+                  <span className="text-sm text-gray-600">
+                    {getVariantLabel(selectedVariant, product.variationTypes)}
+                  </span>
+                  {selectedVariant.sku && (
+                    <span className="text-xs text-gray-400 font-mono">
+                      SKU: {selectedVariant.sku}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Tags */}
           {product.tags?.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-6">
               {product.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="bg-gray-100 text-gray-600 text-xs px-3 py-1 rounded-full"
-                >
+                <span key={tag} className="bg-gray-100 text-gray-600 text-xs px-3 py-1 rounded-full">
                   {tag}
                 </span>
               ))}
@@ -230,13 +263,13 @@ export function ProductDetailClient({ product, related }) {
 
           {/* Stock status */}
           <div className="mb-6">
-            {product.stock > 0 ? (
+            {hasVariations && !allSelected ? (
+              <p className="text-sm text-gray-400">Select options to see availability</p>
+            ) : effectiveStock > 0 ? (
               <p className="text-sm text-green-600 font-medium">
                 ✓ In stock
-                {product.stock <= 10 && (
-                  <span className="text-orange-500 ml-2">
-                    — only {product.stock} left!
-                  </span>
+                {effectiveStock <= 10 && (
+                  <span className="text-orange-500 ml-2">— only {effectiveStock} left!</span>
                 )}
               </p>
             ) : (
@@ -244,7 +277,7 @@ export function ProductDetailClient({ product, related }) {
             )}
           </div>
 
-          {/* Quantity + Add to cart */}
+          {/* Qty + Add to cart */}
           <div className="flex items-center gap-3 mb-6">
             <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden">
               <button
@@ -257,10 +290,8 @@ export function ProductDetailClient({ product, related }) {
                 {quantity}
               </span>
               <button
-                onClick={() =>
-                  setQuantity((q) => Math.min(product.stock, q + 1))
-                }
-                disabled={quantity >= product.stock}
+                onClick={() => setQuantity((q) => Math.min(effectiveStock, q + 1))}
+                disabled={quantity >= effectiveStock}
                 className="p-3 hover:bg-gray-50 transition-colors disabled:opacity-40"
               >
                 <Plus className="w-4 h-4 text-gray-600" />
@@ -269,15 +300,18 @@ export function ProductDetailClient({ product, related }) {
 
             <button
               onClick={handleAddToCart}
-              disabled={product.stock === 0}
+              disabled={effectiveStock === 0 || (hasVariations && !allSelected)}
               className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <ShoppingCart className="w-5 h-5" />
-              Add to cart
+              {hasVariations && !allSelected ? 'Select options' : 'Add to cart'}
             </button>
 
-            <button className="p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
-              <Heart className="w-5 h-5 text-gray-500" />
+            <button
+              onClick={() => toggle(product.id)}
+              className="p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+            >
+              <Heart className={`w-5 h-5 ${saved ? 'fill-red-500 text-red-500' : 'text-gray-500'}`} />
             </button>
           </div>
 
@@ -288,14 +322,9 @@ export function ProductDetailClient({ product, related }) {
               { icon: Shield, text: 'Secure Razorpay payment' },
               { icon: RefreshCw, text: '7-day easy returns' },
             ].map(({ icon: Icon, text }) => (
-              <div
-                key={text}
-                className="flex flex-col items-center gap-1.5 text-center"
-              >
+              <div key={text} className="flex flex-col items-center gap-1.5 text-center">
                 <Icon className="w-5 h-5 text-indigo-500" />
-                <span className="text-xs text-gray-500 leading-tight">
-                  {text}
-                </span>
+                <span className="text-xs text-gray-500 leading-tight">{text}</span>
               </div>
             ))}
           </div>
@@ -304,22 +333,16 @@ export function ProductDetailClient({ product, related }) {
 
       {/* Related products */}
       {related?.length > 0 && (
-        <section>
-          <h2 className="text-xl font-bold text-gray-900 mb-6">
-            You might also like
-          </h2>
+        <section className="mb-16">
+          <h2 className="text-xl font-bold text-gray-900 mb-6">You might also like</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-            {related.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
+            {related.map((p) => <ProductCard key={p.id} product={p} />)}
           </div>
         </section>
       )}
 
       {/* Reviews */}
       <ReviewSection productId={product.id} productName={product.name} />
-
-
     </div>
-  );
+  )
 }

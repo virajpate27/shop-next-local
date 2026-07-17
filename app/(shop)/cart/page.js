@@ -20,8 +20,8 @@ import { CouponInput } from "@/components/cart/CouponInput";
 
 export default function CartPage() {
   const items = useCartStore((s) => s.items);
-  const updateQuantity = useCartStore((s) => s.updateQuantity);
   const removeItem = useCartStore((s) => s.removeItem);
+  const updateQuantity = useCartStore((s) => s.updateQuantity);
   const clearCart = useCartStore((s) => s.clearCart);
 
   const {
@@ -147,6 +147,11 @@ export default function CartPage() {
                     <h3 className="font-medium text-gray-900 line-clamp-1 mb-0.5">
                       {item.name}
                     </h3>
+                    {item.variantLabel && (
+                      <p className="text-xs text-indigo-600 font-medium mb-0.5">
+                        {item.variantLabel}
+                      </p>
+                    )}
                     <p className="text-sm text-gray-400">
                       {formatPrice(item.price)} each
                     </p>
@@ -167,7 +172,11 @@ export default function CartPage() {
                     <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden">
                       <button
                         onClick={() =>
-                          updateQuantity(item.productId, item.quantity - 1)
+                          updateQuantity(
+                            item.productId,
+                            item.quantity - 1,
+                            item.variantId,
+                          )
                         }
                         className="p-2 hover:bg-gray-50 transition-colors"
                         aria-label="Decrease quantity"
@@ -179,7 +188,11 @@ export default function CartPage() {
                       </span>
                       <button
                         onClick={() =>
-                          updateQuantity(item.productId, item.quantity + 1)
+                          updateQuantity(
+                            item.productId,
+                            item.quantity + 1,
+                            item.variantId,
+                          )
                         }
                         disabled={item.quantity >= item.stock}
                         className="p-2 hover:bg-gray-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -194,7 +207,9 @@ export default function CartPage() {
                         {formatPrice(lineTotal)}
                       </span>
                       <button
-                        onClick={() => removeItem(item.productId)}
+                        onClick={() =>
+                          removeItem(item.productId, item.variantId)
+                        }
                         className="p-2 text-gray-400 hover:text-red-500 transition-colors"
                         aria-label="Remove item"
                       >
@@ -208,22 +223,22 @@ export default function CartPage() {
           })}
         </div>
 
-        <CouponInput
-          code={code}
-          setCode={setCode}
-          coupon={coupon}
-          discount={discount}
-          loading={couponLoading}
-          error={couponError}
-          onApply={applyCoupon}
-          onRemove={removeCoupon}
-          cartTotal={safeCartTotal}
-          isFreeShipping={isFreeShipping}
-        />
-
         {/* ── Order summary ────────────────────────────────────────────── */}
         <div className="lg:col-span-1">
           <div className="bg-white border border-gray-100 rounded-2xl p-6 sticky top-24">
+            <CouponInput
+              code={code}
+              setCode={setCode}
+              coupon={coupon}
+              discount={discount}
+              loading={couponLoading}
+              error={couponError}
+              onApply={applyCoupon}
+              onRemove={removeCoupon}
+              cartTotal={safeCartTotal}
+              isFreeShipping={isFreeShipping}
+            />
+
             <h2 className="font-bold text-gray-900 mb-5">Order summary</h2>
 
             <div className="space-y-3 mb-5">

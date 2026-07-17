@@ -5,6 +5,13 @@ import { doc, setDoc, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { calculateCartTax } from '@/utils/tax'
 
+// ── Cart item key — unique per product+variant combination ─────────────────
+// Products without variations: key = productId
+// Products with variations:    key = productId__variantId
+function cartItemKey(productId, variantId) {
+  return variantId ? `${productId}__${variantId}` : productId
+}
+
 export const useCartStore = create()(
   persist(
     (set, get) => ({
@@ -12,29 +19,46 @@ export const useCartStore = create()(
 
       addItem: (newItem) => {
         const items = get().items
-        const existing = items.find((i) => i.productId === newItem.productId)
+        const key = cartItemKey(newItem.productId, newItem.variantId)
 
-        if (existing) {
+        // Match on productId + variantId — different variants = different cart lines
+        const existingIndex = items.findIndex(
+          (i) => cartItemKey(i.productId, i.variantId) === key
+        )
+
+        if (existingIndex !== -1) {
+          // Same product AND same variant → increment quantity
+          const existing = items[existingIndex]
+          const newQty = Math.min(existing.quantity + 1, existing.stock)
           set({
-            items: items.map((i) =>
-              i.productId === newItem.productId
-                ? { ...i, quantity: Math.min(i.quantity + 1, i.stock) }
-                : i
+            items: items.map((item, idx) =>
+              idx === existingIndex ? { ...item, quantity: newQty } : item
             ),
           })
         } else {
+          // Different variant (or no variant) → new cart line
           set({ items: [...items, { ...newItem, quantity: 1 }] })
         }
       },
 
-      removeItem: (productId) =>
-        set({ items: get().items.filter((i) => i.productId !== productId) }),
+      removeItem: (productId, variantId = null) => {
+        const key = cartItemKey(productId, variantId)
+        set({
+          items: get().items.filter(
+            (i) => cartItemKey(i.productId, i.variantId) !== key
+          ),
+        })
+      },
 
-      updateQuantity: (productId, quantity) => {
-        if (quantity <= 0) { get().removeItem(productId); return }
+      updateQuantity: (productId, quantity, variantId = null) => {
+        const key = cartItemKey(productId, variantId)
+        if (quantity <= 0) {
+          get().removeItem(productId, variantId)
+          return
+        }
         set({
           items: get().items.map((i) =>
-            i.productId === productId
+            cartItemKey(i.productId, i.variantId) === key
               ? { ...i, quantity: Math.min(quantity, i.stock) }
               : i
           ),
@@ -43,27 +67,26 @@ export const useCartStore = create()(
 
       clearCart: () => set({ items: [] }),
 
-      // ── Tax-aware totals ────────────────────────────────────────────────
       getSubtotal: () => {
         const items = get().items
         if (!items?.length) return 0
-        return items.reduce((sum, i) => {
-          const price = Number(i.price) || 0
-          const qty   = Number(i.quantity) || 0
-          return sum + price * qty
-        }, 0)
+        return items.reduce(
+          (sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 1),
+          0
+        )
       },
 
       getTaxSummary: () => calculateCartTax(get().items),
 
-      // Total including tax (for exclusive tax items, this is higher than subtotal)
       getTotal: () => {
         const items = get().items
         if (!items?.length) return 0
         const { totalAmount } = calculateCartTax(items)
-        // Final safety net — if somehow NaN slips through, fall back to simple sum
         if (isNaN(totalAmount)) {
-          return items.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0)
+          return items.reduce(
+            (sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 1),
+            0
+          )
         }
         return totalAmount
       },
@@ -74,7 +97,6 @@ export const useCartStore = create()(
         return items.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0)
       },
 
-      // ── Firestore sync ──────────────────────────────────────────────────
       syncToFirestore: async (userId) => {
         if (!userId) return
         try {
@@ -85,7 +107,7 @@ export const useCartStore = create()(
         } catch (err) {
           console.error('Cart sync failed:', err)
         }
-      }, 
+      },
 
       loadFromFirestore: async (userId) => {
         if (!userId) return

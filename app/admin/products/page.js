@@ -1,41 +1,41 @@
 // src/app/admin/products/page.js
-'use client';
-import { useState, useEffect, useRef } from 'react';
-import Image from 'next/image';
-import { Plus, Pencil, Trash2, X, Upload, Loader2 } from 'lucide-react';
-import { TAX_RATES, TAX_TYPES } from '@/utils/tax'
-import { toast } from 'sonner';
+"use client";
+import { useState, useEffect, useRef } from "react";
+import Image from "next/image";
+import { Plus, Pencil, Trash2, X, Upload, Loader2 } from "lucide-react";
+import { TAX_RATES, TAX_TYPES } from "@/utils/tax";
+import { toast } from "sonner";
 import {
   getProducts,
   createProduct,
   updateProduct,
   deleteProduct,
-} from '@/lib/firebase/products';
-import { uploadImages } from '@/lib/cloudinary';
-import { formatPrice, generateSlug } from '@/utils/formatters';
-import { useCategories } from '@/hooks/useCategories'
-import { TaxPreview } from '@/components/admin/TaxPreview'
+} from "@/lib/firebase/products";
+import { uploadImages } from "@/lib/cloudinary";
+import { formatPrice, generateSlug } from "@/utils/formatters";
+import { useCategories } from "@/hooks/useCategories";
+import { TaxPreview } from "@/components/admin/TaxPreview";
+import { VariationBuilder } from "@/components/admin/VariationBuilder";
 
 const EMPTY_FORM = {
-  name: '',
-  slug: '',
-  description: '',
-  price: '',
-  comparePrice: '',
-  category: '',
-  tags: '',
-  stock: '',
-  sku: '',
+  name: "",
+  slug: "",
+  description: "",
+  price: "",
+  comparePrice: "",
+  category: "",
+  tags: "",
+  stock: "",
+  sku: "",
   featured: false,
   images: [],
   taxRate: 0,
-  taxType: 'inclusive',
-  customTaxRate: '',
+  taxType: "inclusive",
+  customTaxRate: "",
+  hasVariations: false,
+  variationTypes: [],
+  variants: [],
 };
-
-
-
-
 
 export default function AdminProductsPage() {
   const [products, setProducts] = useState([]);
@@ -47,7 +47,10 @@ export default function AdminProductsPage() {
   const [uploading, setUploading] = useState(false);
   const [previewUrls, setPreviewUrls] = useState([]);
   const fileInputRef = useRef(null);
-  const { categories } = useCategories()
+  const { categories } = useCategories();
+
+  const [variationTypes, setVariationTypes] = useState([]);
+  const [variants, setVariants] = useState([]);
 
   useEffect(() => {
     fetchProducts();
@@ -59,7 +62,7 @@ export default function AdminProductsPage() {
       const { products } = await getProducts({ pageSize: 50 });
       setProducts(products);
     } catch (err) {
-      toast.error('Failed to load products');
+      toast.error("Failed to load products");
     } finally {
       setLoading(false);
     }
@@ -69,28 +72,35 @@ export default function AdminProductsPage() {
     setEditing(null);
     setForm(EMPTY_FORM);
     setPreviewUrls([]);
+    setVariationTypes([]);
+    setVariants([]);
     setShowModal(true);
   }
 
   function openEdit(product) {
     setEditing(product.id);
     setForm({
-      name: product.name || '',
-      slug: product.slug || '',
-      description: product.description || '',
-      price: product.price || '',
-      comparePrice: product.comparePrice || '',
-      category: product.category || '',
-      tags: product.tags?.join(', ') || '',
-      stock: product.stock || '',
-      sku: product.sku || '',
+      name: product.name || "",
+      slug: product.slug || "",
+      description: product.description || "",
+      price: product.price || "",
+      comparePrice: product.comparePrice || "",
+      category: product.category || "",
+      tags: product.tags?.join(", ") || "",
+      stock: product.stock || "",
+      sku: product.sku || "",
       featured: product.featured || false,
       images: product.images || [],
       taxRate: product.taxRate ?? 0,
-      taxType: product.taxType || 'inclusive',
-      customTaxRate: product.customTaxRate || '',
+      taxType: product.taxType || "inclusive",
+      customTaxRate: product.customTaxRate || "",
+      hasVariations: product.hasVariations || false,
+      variationTypes: product.variationTypes || [],
+      variants: product.variants || [],
     });
     setPreviewUrls(product.images || []);
+    setVariationTypes(product.variationTypes || []);
+    setVariants(product.variants || []);
     setShowModal(true);
   }
 
@@ -105,11 +115,11 @@ export default function AdminProductsPage() {
     setForm((prev) => {
       const updated = {
         ...prev,
-        [type === 'checkbox' ? name : name]:
-          type === 'checkbox' ? checked : value,
+        [type === "checkbox" ? name : name]:
+          type === "checkbox" ? checked : value,
       };
       // Auto-generate slug from name
-      if (name === 'name') updated.slug = generateSlug(value);
+      if (name === "name") updated.slug = generateSlug(value);
       return updated;
     });
   }
@@ -125,10 +135,10 @@ export default function AdminProductsPage() {
       setPreviewUrls((prev) => [...prev, ...urls]);
       toast.success(`${files.length} image(s) uploaded`);
     } catch {
-      toast.error('Image upload failed');
+      toast.error("Image upload failed");
     } finally {
       setUploading(false);
-      e.target.value = '';
+      e.target.value = "";
     }
   }
 
@@ -142,12 +152,12 @@ export default function AdminProductsPage() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.name) return toast.error('Product name is required');
-    if (!form.price) return toast.error('Price is required');
-    if (!form.category) return toast.error('Category is required');
-    if (!form.stock) return toast.error('Stock quantity is required');
+    if (!form.name) return toast.error("Product name is required");
+    if (!form.price) return toast.error("Price is required");
+    if (!form.category) return toast.error("Category is required");
+    if (!form.stock) return toast.error("Stock quantity is required");
     if (form.images.length === 0)
-      return toast.error('At least one image is required');
+      return toast.error("At least one image is required");
 
     setSaving(true);
     try {
@@ -160,32 +170,44 @@ export default function AdminProductsPage() {
         category: form.category,
         tags: form.tags
           ? form.tags
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean)
+              .split(",")
+              .map((t) => t.trim())
+              .filter(Boolean)
           : [],
-        stock: Number(form.stock),
+        hasVariations: form.hasVariations,
+        variationTypes: form.hasVariations ? variationTypes : [],
+        variants: form.hasVariations
+          ? variants.map((v) => ({
+              ...v,
+              price: Number(v.price) || Number(form.price) || 0,
+              stock: Number(v.stock) || 0,
+            }))
+          : [],
+        stock: form.hasVariations
+          ? variants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0)
+          : Number(form.stock),
         sku: form.sku.trim(),
         featured: form.featured,
         images: form.images,
-        taxRate: form.taxRate === 'custom'
-          ? Number(form.customTaxRate) || 0
-          : Number(form.taxRate),
+        taxRate:
+          form.taxRate === "custom"
+            ? Number(form.customTaxRate) || 0
+            : Number(form.taxRate),
         taxType: form.taxType,
       };
 
       if (editing) {
         await updateProduct(editing, data);
-        toast.success('Product updated');
+        toast.success("Product updated");
       } else {
         await createProduct(data);
-        toast.success('Product created');
+        toast.success("Product created");
       }
 
       closeModal();
       fetchProducts();
     } catch (err) {
-      toast.error('Failed to save product');
+      toast.error("Failed to save product");
       console.error(err);
     } finally {
       setSaving(false);
@@ -196,10 +218,10 @@ export default function AdminProductsPage() {
     if (!confirm(`Delete "${product.name}"? This cannot be undone.`)) return;
     try {
       await deleteProduct(product.id);
-      toast.success('Product deleted');
+      toast.success("Product deleted");
       fetchProducts();
     } catch {
-      toast.error('Delete failed');
+      toast.error("Delete failed");
     }
   }
 
@@ -231,7 +253,7 @@ export default function AdminProductsPage() {
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                {['Product', 'Category', 'Price', 'Stock', 'Status', ''].map(
+                {["Product", "Category", "Price", "Stock", "Status", ""].map(
                   (h) => (
                     <th
                       key={h}
@@ -239,7 +261,7 @@ export default function AdminProductsPage() {
                     >
                       {h}
                     </th>
-                  )
+                  ),
                 )}
               </tr>
             </thead>
@@ -264,7 +286,7 @@ export default function AdminProductsPage() {
                           {p.name}
                         </p>
                         <p className="text-xs text-gray-400">
-                          SKU: {p.sku || '—'}
+                          SKU: {p.sku || "—"}
                         </p>
                       </div>
                     </div>
@@ -277,14 +299,15 @@ export default function AdminProductsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <span
-                      className={`text-xs font-medium px-2 py-0.5 rounded-full ${p.stock === 0
-                        ? 'bg-red-50 text-red-600'
-                        : p.stock <= 10
-                          ? 'bg-orange-50 text-orange-600'
-                          : 'bg-green-50 text-green-600'
-                        }`}
+                      className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                        p.stock === 0
+                          ? "bg-red-50 text-red-600"
+                          : p.stock <= 10
+                            ? "bg-orange-50 text-orange-600"
+                            : "bg-green-50 text-green-600"
+                      }`}
                     >
-                      {p.stock === 0 ? 'Out of stock' : `${p.stock} units`}
+                      {p.stock === 0 ? "Out of stock" : `${p.stock} units`}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -324,7 +347,7 @@ export default function AdminProductsPage() {
             {/* Modal header */}
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h2 className="text-lg font-bold text-gray-900">
-                {editing ? 'Edit product' : 'Add new product'}
+                {editing ? "Edit product" : "Add new product"}
               </h2>
               <button
                 onClick={closeModal}
@@ -518,6 +541,44 @@ export default function AdminProductsPage() {
                 </div>
               </div>
 
+              {/* Has variations toggle */}
+              <label className="flex items-center gap-3 cursor-pointer pt-2">
+                <input
+                  type="checkbox"
+                  checked={form.hasVariations}
+                  onChange={(e) => {
+                    setForm((prev) => ({
+                      ...prev,
+                      hasVariations: e.target.checked,
+                    }));
+                    if (!e.target.checked) {
+                      setVariationTypes([]);
+                      setVariants([]);
+                    }
+                  }}
+                  className="w-4 h-4 rounded accent-indigo-600"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  This product has variations (size, color, etc.)
+                </span>
+              </label>
+
+              {/* Variation builder */}
+              {form.hasVariations && (
+                <div className="border-t border-gray-100 pt-5">
+                  <p className="text-sm font-medium text-gray-700 mb-4">
+                    Product variations
+                  </p>
+                  <VariationBuilder
+                    variationTypes={variationTypes}
+                    setVariationTypes={setVariationTypes}
+                    variants={variants}
+                    setVariants={setVariants}
+                    basePrice={form.price}
+                  />
+                </div>
+              )}
+
               {/* Tax */}
               <div className="border-t border-gray-100 pt-5">
                 <p className="text-sm font-medium text-gray-700 mb-4">
@@ -534,15 +595,19 @@ export default function AdminProductsPage() {
                       <button
                         key={rate.value}
                         type="button"
-                        onClick={() => setForm((prev) => ({
-                          ...prev,
-                          taxRate: rate.value,
-                          customTaxRate: rate.value === 'custom' ? prev.customTaxRate : '',
-                        }))}
-                        className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors border ${form.taxRate === rate.value
-                          ? 'bg-indigo-600 text-white border-indigo-600'
-                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                          }`}
+                        onClick={() =>
+                          setForm((prev) => ({
+                            ...prev,
+                            taxRate: rate.value,
+                            customTaxRate:
+                              rate.value === "custom" ? prev.customTaxRate : "",
+                          }))
+                        }
+                        className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+                          form.taxRate === rate.value
+                            ? "bg-indigo-600 text-white border-indigo-600"
+                            : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                        }`}
                       >
                         {rate.label}
                       </button>
@@ -550,7 +615,7 @@ export default function AdminProductsPage() {
                   </div>
 
                   {/* Custom rate input */}
-                  {form.taxRate === 'custom' && (
+                  {form.taxRate === "custom" && (
                     <div className="mt-3 flex items-center gap-2">
                       <input
                         type="number"
@@ -577,10 +642,11 @@ export default function AdminProductsPage() {
                     {TAX_TYPES.map((type) => (
                       <label
                         key={type.value}
-                        className={`flex items-start gap-3 border-2 rounded-xl p-3.5 cursor-pointer transition-colors ${form.taxType === type.value
-                          ? 'border-indigo-500 bg-indigo-50/40'
-                          : 'border-gray-200 hover:border-gray-300'
-                          }`}
+                        className={`flex items-start gap-3 border-2 rounded-xl p-3.5 cursor-pointer transition-colors ${
+                          form.taxType === type.value
+                            ? "border-indigo-500 bg-indigo-50/40"
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
                       >
                         <input
                           type="radio"
@@ -591,8 +657,12 @@ export default function AdminProductsPage() {
                           className="mt-0.5 accent-indigo-600"
                         />
                         <div>
-                          <p className="text-sm font-medium text-gray-900">{type.label}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{type.desc}</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {type.label}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {type.desc}
+                          </p>
                         </div>
                       </label>
                     ))}
@@ -603,9 +673,11 @@ export default function AdminProductsPage() {
                 {form.price && Number(form.taxRate) > 0 && (
                   <TaxPreview
                     price={Number(form.price)}
-                    taxRate={form.taxRate === 'custom'
-                      ? Number(form.customTaxRate) || 0
-                      : Number(form.taxRate)}
+                    taxRate={
+                      form.taxRate === "custom"
+                        ? Number(form.customTaxRate) || 0
+                        : Number(form.taxRate)
+                    }
                     taxType={form.taxType}
                   />
                 )}
@@ -614,7 +686,7 @@ export default function AdminProductsPage() {
               {/* Tags */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Tags{' '}
+                  Tags{" "}
                   <span className="text-xs text-gray-400">
                     (comma separated)
                   </span>
@@ -657,7 +729,7 @@ export default function AdminProductsPage() {
                   className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-medium transition-colors text-sm disabled:opacity-60 flex items-center justify-center gap-2"
                 >
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {editing ? 'Save changes' : 'Create product'}
+                  {editing ? "Save changes" : "Create product"}
                 </button>
               </div>
             </form>
