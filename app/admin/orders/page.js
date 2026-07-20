@@ -407,30 +407,7 @@ export default function AdminOrdersPage() {
                 </div>
               </div>
 
-              {selectedOrder.couponCode && (
-                <div className="border-t border-gray-100 pt-4">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                    <Tag className="w-3.5 h-3.5" /> Coupon applied
-                  </p>
-                  <div className="flex items-center justify-between bg-green-50 rounded-xl px-4 py-3">
-                    <div>
-                      <p className="text-sm font-bold text-green-800 font-mono tracking-wider">
-                        {selectedOrder.couponCode}
-                      </p>
-                      <p className="text-xs text-green-600 mt-0.5">
-                        {selectedOrder.couponType === "free_shipping"
-                          ? "Free shipping"
-                          : `Discount applied — ${formatPrice(selectedOrder.discount)} saved`}
-                      </p>
-                    </div>
-                    {selectedOrder.discount > 0 && (
-                      <span className="text-green-700 font-bold text-sm">
-                        −{formatPrice(selectedOrder.discount)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
+            
 
               {/* tax */}
               {selectedOrder.totalTax > 0 && (

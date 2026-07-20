@@ -179,7 +179,8 @@ export default function CheckoutPage() {
       // ── COD ───────────────────────────────────────────────────────────
       if (paymentMethod === 'cod') {
         const orderId = await createOrder(baseOrderData)
-
+         clearCart() // also clears coupon from store
+         
         await fetch('/api/orders/confirm', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -203,7 +204,7 @@ export default function CheckoutPage() {
           }),
         ])
 
-        clearCart() // also clears coupon from store
+       
         toast.success('Order placed successfully!')
         router.push(`/orders/${orderId}?success=true`)
         return
