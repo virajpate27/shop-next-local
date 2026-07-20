@@ -5,9 +5,6 @@ import { doc, setDoc, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { calculateCartTax } from '@/utils/tax'
 
-// ── Cart item key — unique per product+variant combination ─────────────────
-// Products without variations: key = productId
-// Products with variations:    key = productId__variantId
 function cartItemKey(productId, variantId) {
   return variantId ? `${productId}__${variantId}` : productId
 }
@@ -17,17 +14,28 @@ export const useCartStore = create()(
     (set, get) => ({
       items: [],
 
+      // ── Coupon state persisted alongside cart ──────────────────────────
+      appliedCoupon:   null,   // full coupon object
+      couponDiscount:  0,      // rupee amount saved
+
+      // ── Coupon actions ─────────────────────────────────────────────────
+      setCoupon: (coupon, discount) => {
+        set({ appliedCoupon: coupon, couponDiscount: discount })
+      },
+
+      removeCoupon: () => {
+        set({ appliedCoupon: null, couponDiscount: 0 })
+      },
+
+      // ── Item actions ───────────────────────────────────────────────────
       addItem: (newItem) => {
         const items = get().items
         const key = cartItemKey(newItem.productId, newItem.variantId)
-
-        // Match on productId + variantId — different variants = different cart lines
         const existingIndex = items.findIndex(
           (i) => cartItemKey(i.productId, i.variantId) === key
         )
 
         if (existingIndex !== -1) {
-          // Same product AND same variant → increment quantity
           const existing = items[existingIndex]
           const newQty = Math.min(existing.quantity + 1, existing.stock)
           set({
@@ -36,7 +44,6 @@ export const useCartStore = create()(
             ),
           })
         } else {
-          // Different variant (or no variant) → new cart line
           set({ items: [...items, { ...newItem, quantity: 1 }] })
         }
       },
@@ -65,8 +72,14 @@ export const useCartStore = create()(
         })
       },
 
-      clearCart: () => set({ items: [] }),
+      // Clear cart AND coupon after order placed
+      clearCart: () => set({
+        items:           [],
+        appliedCoupon:   null,
+        couponDiscount:  0,
+      }),
 
+      // ── Totals ─────────────────────────────────────────────────────────
       getSubtotal: () => {
         const items = get().items
         if (!items?.length) return 0
@@ -101,8 +114,10 @@ export const useCartStore = create()(
         if (!userId) return
         try {
           await setDoc(doc(db, 'carts', userId), {
-            items: get().items,
-            updatedAt: new Date().toISOString(),
+            items:          get().items,
+            appliedCoupon:  get().appliedCoupon,
+            couponDiscount: get().couponDiscount,
+            updatedAt:      new Date().toISOString(),
           })
         } catch (err) {
           console.error('Cart sync failed:', err)
@@ -113,14 +128,29 @@ export const useCartStore = create()(
         if (!userId) return
         try {
           const snap = await getDoc(doc(db, 'carts', userId))
-          if (snap.exists() && snap.data().items?.length) {
-            if (get().items.length === 0) set({ items: snap.data().items })
+          if (snap.exists()) {
+            const data = snap.data()
+            if (data.items?.length && get().items.length === 0) {
+              set({
+                items:          data.items          || [],
+                appliedCoupon:  data.appliedCoupon  || null,
+                couponDiscount: data.couponDiscount || 0,
+              })
+            }
           }
         } catch (err) {
           console.error('Cart load failed:', err)
         }
       },
     }),
-    { name: 'shopnext-cart' }
+    {
+      name: 'shopnext-cart',
+      // Only persist these keys to localStorage
+      partialize: (state) => ({
+        items:          state.items,
+        appliedCoupon:  state.appliedCoupon,
+        couponDiscount: state.couponDiscount,
+      }),
+    }
   )
 )

@@ -2,13 +2,18 @@
 'use client'
 import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
+import { useCartStore } from '@/store/cartStore'
 
 export function useCoupon() {
-  const [code, setCode]           = useState('')
-  const [coupon, setCoupon]       = useState(null)
-  const [discount, setDiscount]   = useState(0)
-  const [loading, setLoading]     = useState(false)
-  const [error, setError]         = useState('')
+  const appliedCoupon  = useCartStore((s) => s.appliedCoupon)
+  const couponDiscount = useCartStore((s) => s.couponDiscount)
+  const setCoupon      = useCartStore((s) => s.setCoupon)
+  const removeCoupon   = useCartStore((s) => s.removeCoupon)
+
+  // Local input state only — not persisted (just the text field)
+  const [code,    setCode]    = useState(appliedCoupon?.code || '')
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState('')
 
   const apply = useCallback(async (cartTotal) => {
     if (!code.trim()) {
@@ -20,21 +25,20 @@ export function useCoupon() {
 
     try {
       const res = await fetch('/api/coupons/validate', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: code.trim(), cartTotal }),
+        body:    JSON.stringify({ code: code.trim(), cartTotal }),
       })
       const data = await res.json()
 
       if (!data.valid) {
         setError(data.error || 'Invalid coupon')
-        setCoupon(null)
-        setDiscount(0)
         return false
       }
 
-      setCoupon(data.coupon)
-      setDiscount(data.discount)
+      // Save to cart store — persists across pages and refresh
+      setCoupon(data.coupon, data.discount)
+
       toast.success(
         data.coupon.discountType === 'free_shipping'
           ? 'Free shipping applied!'
@@ -49,23 +53,23 @@ export function useCoupon() {
     } finally {
       setLoading(false)
     }
-  }, [code])
+  }, [code, setCoupon])
 
   const remove = useCallback(() => {
+    removeCoupon()
     setCode('')
-    setCoupon(null)
-    setDiscount(0)
     setError('')
     toast.success('Coupon removed')
-  }, [])
+  }, [removeCoupon])
 
-  const isFreeShipping = coupon?.discountType === 'free_shipping'
+  const isFreeShipping = appliedCoupon?.discountType === 'free_shipping'
 
   return {
-    code, setCode,
-    coupon, discount,
-    loading, error,
-    apply, remove,
+    code,           setCode,
+    coupon:         appliedCoupon,
+    discount:       couponDiscount,
+    loading,        error,
+    apply,          remove,
     isFreeShipping,
   }
 }

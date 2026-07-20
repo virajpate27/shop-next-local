@@ -193,7 +193,7 @@ export default function OrderDetailPage() {
             </div>
           )}
 
-
+          
 
           {order.codFee > 0 && (
             <div className="flex justify-between text-sm">
@@ -201,6 +201,20 @@ export default function OrderDetailPage() {
               <span className="text-gray-900">{formatPrice(order.codFee)}</span>
             </div>
           )}
+
+          {order.couponCode && (
+  <div className="flex justify-between text-sm">
+    <span className="text-gray-500 flex items-center gap-1.5">
+      <Tag className="w-3.5 h-3.5 text-green-500" />
+      Coupon ({order.couponCode})
+    </span>
+    <span className="text-green-600 font-medium">
+      {order.couponType === 'free_shipping'
+        ? 'Free shipping'
+        : `−${formatPrice(order.discount)}`}
+    </span>
+  </div>
+)}
         </div>
 
         <div className="flex justify-between items-baseline py-3 border-t border-gray-100">

@@ -1,126 +1,157 @@
 // src/app/admin/orders/page.js
-'use client'
-import { useState, useEffect, useMemo } from 'react'
-import Image from 'next/image'
-import { collection, onSnapshot, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
-import { toast } from 'sonner'
-import { triggerEmail } from '@/lib/triggerEmail'
+"use client";
+import { useState, useEffect, useMemo } from "react";
+import Image from "next/image";
 import {
-  Search, ChevronDown, X, Package, MapPin, Banknote,
-  ShieldCheck, Loader2,
-} from 'lucide-react'
-import { formatPrice, formatDate } from '@/utils/formatters'
-import { getOptimizedUrl } from '@/lib/cloudinary'
+  collection,
+  onSnapshot,
+  doc,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase/config";
+import { toast } from "sonner";
+import { triggerEmail } from "@/lib/triggerEmail";
+import {
+  Search,
+  ChevronDown,
+  X,
+  Package,
+  MapPin,
+  Banknote,
+  ShieldCheck,
+  Loader2,
+} from "lucide-react";
+import { formatPrice, formatDate } from "@/utils/formatters";
+import { getOptimizedUrl } from "@/lib/cloudinary";
 
-const STATUS_OPTIONS = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled']
+const STATUS_OPTIONS = [
+  "pending",
+  "confirmed",
+  "processing",
+  "shipped",
+  "delivered",
+  "cancelled",
+];
 
 const STATUS_STYLES = {
-  pending: 'bg-yellow-50 text-yellow-700',
-  confirmed: 'bg-blue-50 text-blue-700',
-  processing: 'bg-blue-50 text-blue-700',
-  shipped: 'bg-purple-50 text-purple-700',
-  delivered: 'bg-green-50 text-green-700',
-  cancelled: 'bg-red-50 text-red-700',
-}
+  pending: "bg-yellow-50 text-yellow-700",
+  confirmed: "bg-blue-50 text-blue-700",
+  processing: "bg-blue-50 text-blue-700",
+  shipped: "bg-purple-50 text-purple-700",
+  delivered: "bg-green-50 text-green-700",
+  cancelled: "bg-red-50 text-red-700",
+};
 
 export default function AdminOrdersPage() {
-  const [orders, setOrders] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [paymentFilter, setPaymentFilter] = useState('all')
-  const [search, setSearch] = useState('')
-  const [selectedOrder, setSelectedOrder] = useState(null)
-  const [updatingId, setUpdatingId] = useState(null)
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [paymentFilter, setPaymentFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [updatingId, setUpdatingId] = useState(null);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'orders'), (snap) => {
-      const toMs = (v) => (v?.toDate ? v.toDate().getTime() : 0)
+    const unsub = onSnapshot(collection(db, "orders"), (snap) => {
+      const toMs = (v) => (v?.toDate ? v.toDate().getTime() : 0);
       const results = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))
-      setOrders(results)
-      setLoading(false)
+        .sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
+      setOrders(results);
+      setLoading(false);
 
       // keep modal data fresh if open
       if (selectedOrder) {
-        const updated = results.find((o) => o.id === selectedOrder.id)
-        if (updated) setSelectedOrder(updated)
+        const updated = results.find((o) => o.id === selectedOrder.id);
+        if (updated) setSelectedOrder(updated);
       }
-    })
-    return unsub
+    });
+    return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, []);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      if (statusFilter !== 'all' && order.status !== statusFilter) return false
-      if (paymentFilter !== 'all' && order.paymentMethod !== paymentFilter) return false
+      if (statusFilter !== "all" && order.status !== statusFilter) return false;
+      if (paymentFilter !== "all" && order.paymentMethod !== paymentFilter)
+        return false;
       if (search) {
-        const q = search.toLowerCase()
-        const matchesId = order.id.toLowerCase().includes(q)
-        const matchesName = order.shippingAddress?.fullName?.toLowerCase().includes(q)
-        const matchesPhone = order.shippingAddress?.phone?.includes(q)
-        if (!matchesId && !matchesName && !matchesPhone) return false
+        const q = search.toLowerCase();
+        const matchesId = order.id.toLowerCase().includes(q);
+        const matchesName = order.shippingAddress?.fullName
+          ?.toLowerCase()
+          .includes(q);
+        const matchesPhone = order.shippingAddress?.phone?.includes(q);
+        if (!matchesId && !matchesName && !matchesPhone) return false;
       }
-      return true
-    })
-  }, [orders, statusFilter, paymentFilter, search])
+      return true;
+    });
+  }, [orders, statusFilter, paymentFilter, search]);
 
   async function handleStatusChange(orderId, newStatus) {
-    setUpdatingId(orderId)
+    setUpdatingId(orderId);
     try {
-      await updateDoc(doc(db, 'orders', orderId), {
+      await updateDoc(doc(db, "orders", orderId), {
         status: newStatus,
         updatedAt: serverTimestamp(),
-      })
+      });
 
       // Send status update email to customer
       // (only for meaningful status changes, not every update)
-      const notifyStatuses = ['processing', 'shipped', 'delivered', 'cancelled']
+      const notifyStatuses = [
+        "processing",
+        "shipped",
+        "delivered",
+        "cancelled",
+      ];
       if (notifyStatuses.includes(newStatus)) {
-        const order = orders.find((o) => o.id === orderId)
+        const order = orders.find((o) => o.id === orderId);
         if (order?.customerEmail) {
-          triggerEmail('order_status', order.customerEmail, {
+          triggerEmail("order_status", order.customerEmail, {
             order,
             orderId,
             newStatus,
-          })
+          });
         }
       }
 
-
-      toast.success(`Order marked as ${newStatus}`)
+      toast.success(`Order marked as ${newStatus}`);
     } catch {
-      toast.error('Failed to update order status')
+      toast.error("Failed to update order status");
     } finally {
-      setUpdatingId(null)
+      setUpdatingId(null);
     }
   }
 
   const orderCounts = useMemo(() => {
-    const counts = { all: orders.length }
+    const counts = { all: orders.length };
     STATUS_OPTIONS.forEach((s) => {
-      counts[s] = orders.filter((o) => o.status === s).length
-    })
-    return counts
-  }, [orders])
+      counts[s] = orders.filter((o) => o.status === s).length;
+    });
+    return counts;
+  }, [orders]);
 
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{orders.length} total orders</p>
+          <p className="text-sm text-gray-400 mt-0.5">
+            {orders.length} total orders
+          </p>
         </div>
       </div>
 
       {/* Status tabs */}
       <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
         <button
-          onClick={() => setStatusFilter('all')}
-          className={`px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${statusFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
+          onClick={() => setStatusFilter("all")}
+          className={`px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+            statusFilter === "all"
+              ? "bg-indigo-600 text-white"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          }`}
         >
           All ({orderCounts.all})
         </button>
@@ -128,8 +159,11 @@ export default function AdminOrdersPage() {
           <button
             key={s}
             onClick={() => setStatusFilter(s)}
-            className={`px-3.5 py-1.5 rounded-full text-sm font-medium capitalize whitespace-nowrap transition-colors ${statusFilter === s ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
+            className={`px-3.5 py-1.5 rounded-full text-sm font-medium capitalize whitespace-nowrap transition-colors ${
+              statusFilter === s
+                ? "bg-indigo-600 text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
           >
             {s} ({orderCounts[s] || 0})
           </button>
@@ -171,8 +205,19 @@ export default function AdminOrdersPage() {
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                {['Order', 'Customer', 'Items', 'Payment', 'Total', 'Status', 'Date'].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                {[
+                  "Order",
+                  "Customer",
+                  "Items",
+                  "Payment",
+                  "Total",
+                  "Status",
+                  "Date",
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
+                  >
                     {h}
                   </th>
                 ))}
@@ -180,7 +225,10 @@ export default function AdminOrdersPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filteredOrders.map((order) => (
-                <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+                <tr
+                  key={order.id}
+                  className="hover:bg-gray-50 transition-colors"
+                >
                   <td className="px-4 py-3">
                     <button
                       onClick={() => setSelectedOrder(order)}
@@ -190,18 +238,29 @@ export default function AdminOrdersPage() {
                     </button>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="text-sm text-gray-900">{order.shippingAddress?.fullName || '—'}</p>
-                    <p className="text-xs text-gray-400">{order.shippingAddress?.phone}</p>
+                    <p className="text-sm text-gray-900">
+                      {order.shippingAddress?.fullName || "—"}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {order.shippingAddress?.phone}
+                    </p>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
-                    {order.items?.length} item{order.items?.length !== 1 ? 's' : ''}
+                    {order.items?.length} item
+                    {order.items?.length !== 1 ? "s" : ""}
                   </td>
                   <td className="px-4 py-3">
                     <span className="flex items-center gap-1 text-xs">
-                      {order.paymentMethod === 'cod' ? (
-                        <><Banknote className="w-3.5 h-3.5 text-green-600" /> COD</>
+                      {order.paymentMethod === "cod" ? (
+                        <>
+                          <Banknote className="w-3.5 h-3.5 text-green-600" />{" "}
+                          COD
+                        </>
                       ) : (
-                        <><ShieldCheck className="w-3.5 h-3.5 text-indigo-600" /> Razorpay</>
+                        <>
+                          <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />{" "}
+                          Razorpay
+                        </>
                       )}
                     </span>
                   </td>
@@ -212,12 +271,16 @@ export default function AdminOrdersPage() {
                     <div className="relative inline-block">
                       <select
                         value={order.status}
-                        onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                        onChange={(e) =>
+                          handleStatusChange(order.id, e.target.value)
+                        }
                         disabled={updatingId === order.id}
-                        className={`appearance-none text-xs font-medium pl-2.5 pr-7 py-1.5 rounded-full capitalize cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 ${STATUS_STYLES[order.status] || ''}`}
+                        className={`appearance-none text-xs font-medium pl-2.5 pr-7 py-1.5 rounded-full capitalize cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 ${STATUS_STYLES[order.status] || ""}`}
                       >
                         {STATUS_OPTIONS.map((s) => (
-                          <option key={s} value={s}>{s}</option>
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
                         ))}
                       </select>
                       {updatingId === order.id ? (
@@ -227,12 +290,17 @@ export default function AdminOrdersPage() {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-gray-400">{formatDate(order.createdAt)}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400">
+                    {formatDate(order.createdAt)}
+                  </td>
                 </tr>
               ))}
               {filteredOrders.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-16 text-center text-sm text-gray-400">
+                  <td
+                    colSpan={7}
+                    className="px-4 py-16 text-center text-sm text-gray-400"
+                  >
                     No orders match your filters
                   </td>
                 </tr>
@@ -251,7 +319,9 @@ export default function AdminOrdersPage() {
                 <h3 className="font-bold text-gray-900">
                   Order #{selectedOrder.id.slice(0, 8).toUpperCase()}
                 </h3>
-                <p className="text-xs text-gray-400 mt-0.5">{formatDate(selectedOrder.createdAt)}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {formatDate(selectedOrder.createdAt)}
+                </p>
               </div>
               <button
                 onClick={() => setSelectedOrder(null)}
@@ -268,11 +338,15 @@ export default function AdminOrdersPage() {
                 <div className="relative">
                   <select
                     value={selectedOrder.status}
-                    onChange={(e) => handleStatusChange(selectedOrder.id, e.target.value)}
-                    className={`appearance-none text-sm font-medium pl-3 pr-8 py-1.5 rounded-full capitalize cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 ${STATUS_STYLES[selectedOrder.status] || ''}`}
+                    onChange={(e) =>
+                      handleStatusChange(selectedOrder.id, e.target.value)
+                    }
+                    className={`appearance-none text-sm font-medium pl-3 pr-8 py-1.5 rounded-full capitalize cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 ${STATUS_STYLES[selectedOrder.status] || ""}`}
                   >
                     {STATUS_OPTIONS.map((s) => (
-                      <option key={s} value={s}>{s}</option>
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
                     ))}
                   </select>
                   <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" />
@@ -284,12 +358,18 @@ export default function AdminOrdersPage() {
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5" /> Delivery address
                 </p>
-                <p className="text-sm font-medium text-gray-900">{selectedOrder.shippingAddress?.fullName}</p>
-                <p className="text-sm text-gray-500">
-                  {selectedOrder.shippingAddress?.line1}, {selectedOrder.shippingAddress?.city},{' '}
-                  {selectedOrder.shippingAddress?.state} — {selectedOrder.shippingAddress?.pincode}
+                <p className="text-sm font-medium text-gray-900">
+                  {selectedOrder.shippingAddress?.fullName}
                 </p>
-                <p className="text-sm text-gray-400">{selectedOrder.shippingAddress?.phone}</p>
+                <p className="text-sm text-gray-500">
+                  {selectedOrder.shippingAddress?.line1},{" "}
+                  {selectedOrder.shippingAddress?.city},{" "}
+                  {selectedOrder.shippingAddress?.state} —{" "}
+                  {selectedOrder.shippingAddress?.pincode}
+                </p>
+                <p className="text-sm text-gray-400">
+                  {selectedOrder.shippingAddress?.phone}
+                </p>
               </div>
 
               {/* Items */}
@@ -303,7 +383,10 @@ export default function AdminOrdersPage() {
                       <div className="relative w-12 h-12 bg-gray-50 rounded-lg overflow-hidden flex-shrink-0">
                         {item.image && (
                           <Image
-                            src={getOptimizedUrl(item.image, { width: 96, height: 96 })}
+                            src={getOptimizedUrl(item.image, {
+                              width: 96,
+                              height: 96,
+                            })}
                             alt={item.name}
                             fill
                             className="object-cover"
@@ -312,7 +395,9 @@ export default function AdminOrdersPage() {
                       </div>
                       <div className="flex-1">
                         <p className="text-sm text-gray-900">{item.name}</p>
-                        <p className="text-xs text-gray-400">Qty: {item.quantity}</p>
+                        <p className="text-xs text-gray-400">
+                          Qty: {item.quantity}
+                        </p>
                       </div>
                       <span className="text-sm font-medium text-gray-900">
                         {formatPrice(item.price * item.quantity)}
@@ -322,6 +407,31 @@ export default function AdminOrdersPage() {
                 </div>
               </div>
 
+              {selectedOrder.couponCode && (
+                <div className="border-t border-gray-100 pt-4">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5" /> Coupon applied
+                  </p>
+                  <div className="flex items-center justify-between bg-green-50 rounded-xl px-4 py-3">
+                    <div>
+                      <p className="text-sm font-bold text-green-800 font-mono tracking-wider">
+                        {selectedOrder.couponCode}
+                      </p>
+                      <p className="text-xs text-green-600 mt-0.5">
+                        {selectedOrder.couponType === "free_shipping"
+                          ? "Free shipping"
+                          : `Discount applied — ${formatPrice(selectedOrder.discount)} saved`}
+                      </p>
+                    </div>
+                    {selectedOrder.discount > 0 && (
+                      <span className="text-green-700 font-bold text-sm">
+                        −{formatPrice(selectedOrder.discount)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* tax */}
               {selectedOrder.totalTax > 0 && (
                 <div className="border-t border-gray-100 pt-4">
@@ -329,9 +439,16 @@ export default function AdminOrdersPage() {
                     GST collected
                   </p>
                   {selectedOrder.taxBreakdown?.map((tb) => (
-                    <div key={tb.rate} className="flex justify-between text-xs text-gray-500 mb-1">
-                      <span>GST {tb.rate}% on {formatPrice(tb.baseAmount)}</span>
-                      <span className="font-medium">{formatPrice(tb.taxAmount)}</span>
+                    <div
+                      key={tb.rate}
+                      className="flex justify-between text-xs text-gray-500 mb-1"
+                    >
+                      <span>
+                        GST {tb.rate}% on {formatPrice(tb.baseAmount)}
+                      </span>
+                      <span className="font-medium">
+                        {formatPrice(tb.taxAmount)}
+                      </span>
                     </div>
                   ))}
                   <div className="flex justify-between text-sm font-semibold text-gray-900 pt-2 border-t border-gray-50 mt-1">
@@ -345,31 +462,45 @@ export default function AdminOrdersPage() {
               <div className="border-t border-gray-100 pt-4 space-y-1.5">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Subtotal</span>
-                  <span className="text-gray-900">{formatPrice(selectedOrder.subtotal)}</span>
+                  <span className="text-gray-900">
+                    {formatPrice(selectedOrder.subtotal)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Shipping</span>
                   <span className="text-gray-900">
-                    {selectedOrder.shipping === 0 ? 'Free' : formatPrice(selectedOrder.shipping)}
+                    {selectedOrder.shipping === 0
+                      ? "Free"
+                      : formatPrice(selectedOrder.shipping)}
                   </span>
                 </div>
                 {selectedOrder.codFee > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">COD fee</span>
-                    <span className="text-gray-900">{formatPrice(selectedOrder.codFee)}</span>
+                    <span className="text-gray-900">
+                      {formatPrice(selectedOrder.codFee)}
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between text-base font-semibold pt-2 border-t border-gray-50">
                   <span className="text-gray-900">Total</span>
-                  <span className="text-gray-900">{formatPrice(selectedOrder.total)}</span>
+                  <span className="text-gray-900">
+                    {formatPrice(selectedOrder.total)}
+                  </span>
                 </div>
               </div>
 
               <p className="text-xs text-gray-400 flex items-center gap-1.5">
-                {selectedOrder.paymentMethod === 'cod' ? (
-                  <><Banknote className="w-3.5 h-3.5" /> Cash on Delivery</>
+                {selectedOrder.paymentMethod === "cod" ? (
+                  <>
+                    <Banknote className="w-3.5 h-3.5" /> Cash on Delivery
+                  </>
                 ) : (
-                  <><ShieldCheck className="w-3.5 h-3.5" /> Paid via Razorpay {selectedOrder.razorpayPaymentId && `· ${selectedOrder.razorpayPaymentId}`}</>
+                  <>
+                    <ShieldCheck className="w-3.5 h-3.5" /> Paid via Razorpay{" "}
+                    {selectedOrder.razorpayPaymentId &&
+                      `· ${selectedOrder.razorpayPaymentId}`}
+                  </>
                 )}
               </p>
             </div>
@@ -377,5 +508,5 @@ export default function AdminOrdersPage() {
         </div>
       )}
     </div>
-  )
+  );
 }
