@@ -35,6 +35,7 @@ const EMPTY_FORM = {
   hasVariations: false,
   variationTypes: [],
   variants: [],
+  defaultVariant: {},
 };
 
 export default function AdminProductsPage() {
@@ -51,6 +52,7 @@ export default function AdminProductsPage() {
 
   const [variationTypes, setVariationTypes] = useState([]);
   const [variants, setVariants] = useState([]);
+  const [defaultVariant, setDefaultVariant] = useState({})
 
   useEffect(() => {
     fetchProducts();
@@ -74,7 +76,9 @@ export default function AdminProductsPage() {
     setPreviewUrls([]);
     setVariationTypes([]);
     setVariants([]);
+    setDefaultVariant({})
     setShowModal(true);
+
   }
 
   function openEdit(product) {
@@ -101,6 +105,7 @@ export default function AdminProductsPage() {
     setPreviewUrls(product.images || []);
     setVariationTypes(product.variationTypes || []);
     setVariants(product.variants || []);
+    setDefaultVariant(product.defaultVariant || {})
     setShowModal(true);
   }
 
@@ -183,6 +188,7 @@ export default function AdminProductsPage() {
               stock: Number(v.stock) || 0,
             }))
           : [],
+        defaultVariant: form.hasVariations ? defaultVariant : {},
         stock: form.hasVariations
           ? variants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0)
           : Number(form.stock),
@@ -575,6 +581,8 @@ export default function AdminProductsPage() {
                     variants={variants}
                     setVariants={setVariants}
                     basePrice={form.price}
+                    defaultVariant={defaultVariant}
+                    setDefaultVariant={setDefaultVariant}
                   />
                 </div>
               )}
