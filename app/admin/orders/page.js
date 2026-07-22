@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { formatPrice, formatDate } from "@/utils/formatters";
 import { getOptimizedUrl } from "@/lib/cloudinary";
+import { updateOrderStatus } from '@/lib/firebase/orders'
 
 const STATUS_OPTIONS = [
   "pending",
@@ -91,39 +92,28 @@ export default function AdminOrdersPage() {
   }, [orders, statusFilter, paymentFilter, search]);
 
   async function handleStatusChange(orderId, newStatus) {
-    setUpdatingId(orderId);
-    try {
-      await updateDoc(doc(db, "orders", orderId), {
-        status: newStatus,
-        updatedAt: serverTimestamp(),
-      });
+  setUpdatingId(orderId)
+  try {
+    // updateOrderStatus now saves a timeline event with timestamp
+    await updateOrderStatus(orderId, newStatus)
+    toast.success(`Order marked as ${newStatus}`)
 
-      // Send status update email to customer
-      // (only for meaningful status changes, not every update)
-      const notifyStatuses = [
-        "processing",
-        "shipped",
-        "delivered",
-        "cancelled",
-      ];
-      if (notifyStatuses.includes(newStatus)) {
-        const order = orders.find((o) => o.id === orderId);
-        if (order?.customerEmail) {
-          triggerEmail("order_status", order.customerEmail, {
-            order,
-            orderId,
-            newStatus,
-          });
-        }
+    // Send status email to customer
+    const notifyStatuses = ['processing', 'shipped', 'delivered', 'cancelled']
+    if (notifyStatuses.includes(newStatus)) {
+      const order = orders.find((o) => o.id === orderId)
+      if (order?.customerEmail) {
+        triggerEmail('order_status', order.customerEmail, {
+          order, orderId, newStatus,
+        })
       }
-
-      toast.success(`Order marked as ${newStatus}`);
-    } catch {
-      toast.error("Failed to update order status");
-    } finally {
-      setUpdatingId(null);
     }
+  } catch {
+    toast.error('Failed to update order status')
+  } finally {
+    setUpdatingId(null)
   }
+}
 
   const orderCounts = useMemo(() => {
     const counts = { all: orders.length };
