@@ -1,5 +1,5 @@
 // src/emails/templates.js
-import { APP_URL } from '@/lib/resend'
+import { APP_URL } from "@/lib/resend";
 
 // ── Shared styles ──────────────────────────────────────────────────────────
 const styles = {
@@ -33,16 +33,16 @@ const styles = {
   footer: `padding: 20px 32px; background: #f9fafb;
            border-top: 1px solid #f3f4f6; text-align: center;`,
   footerText: `color: #9ca3af; font-size: 12px; margin: 0; line-height: 1.6;`,
-}
+};
 
 // ── Shared components ──────────────────────────────────────────────────────
-function Header(subtitle = '') {
+function Header(subtitle = "") {
   return `
     <div style="${styles.header}">
       <p style="${styles.logo}">🛍 ShopNext</p>
-      ${subtitle ? `<p style="${styles.headerSub}">${subtitle}</p>` : ''}
+      ${subtitle ? `<p style="${styles.headerSub}">${subtitle}</p>` : ""}
     </div>
-  `
+  `;
 }
 
 function Footer() {
@@ -54,26 +54,27 @@ function Footer() {
         <a href="${APP_URL}/orders" style="color: #4f46e5;">your orders</a>.
       </p>
     </div>
-  `
+  `;
 }
 
 function formatPrice(amount) {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency', currency: 'INR',
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
     minimumFractionDigits: 0,
-  }).format(amount)
+  }).format(amount);
 }
 
 function statusColor(status) {
   const map = {
-    pending: '#f59e0b',
-    confirmed: '#3b82f6',
-    processing: '#3b82f6',
-    shipped: '#8b5cf6',
-    delivered: '#10b981',
-    cancelled: '#ef4444',
-  }
-  return map[status] || '#6b7280'
+    pending: "#f59e0b",
+    confirmed: "#3b82f6",
+    processing: "#3b82f6",
+    shipped: "#8b5cf6",
+    delivered: "#10b981",
+    cancelled: "#ef4444",
+  };
+  return map[status] || "#6b7280";
 }
 
 function OrderItemsTable(items) {
@@ -87,7 +88,9 @@ function OrderItemsTable(items) {
         </tr>
       </thead>
       <tbody>
-        ${items.map((item) => `
+        ${items
+          .map(
+            (item) => `
           <tr>
             <td style="${styles.td}">${item.name}</td>
             <td style="${styles.td}; text-align: right; color: #6b7280;">${item.quantity}</td>
@@ -95,10 +98,12 @@ function OrderItemsTable(items) {
               ${formatPrice(item.price * item.quantity)}
             </td>
           </tr>
-        `).join('')}
+        `,
+          )
+          .join("")}
       </tbody>
     </table>
-  `
+  `;
 }
 
 function OrderSummaryBox(order) {
@@ -113,17 +118,21 @@ function OrderSummaryBox(order) {
       <div style="display: flex; justify-content: space-between;
                   margin-bottom: 8px;">
         <span style="color: #6b7280; font-size: 14px;">Shipping</span>
-        <span style="font-size: 14px; color: ${order.shipping === 0 ? '#10b981' : '#374151'};">
-          ${order.shipping === 0 ? 'Free' : formatPrice(order.shipping)}
+        <span style="font-size: 14px; color: ${order.shipping === 0 ? "#10b981" : "#374151"};">
+          ${order.shipping === 0 ? "Free" : formatPrice(order.shipping)}
         </span>
       </div>
-      ${order.codFee > 0 ? `
+      ${
+        order.codFee > 0
+          ? `
         <div style="display: flex; justify-content: space-between;
                     margin-bottom: 8px;">
           <span style="color: #6b7280; font-size: 14px;">COD fee</span>
           <span style="font-size: 14px;">${formatPrice(order.codFee)}</span>
         </div>
-      ` : ''}
+      `
+          : ""
+      }
       <div style="display: flex; justify-content: space-between;
                   padding-top: 12px; border-top: 1px solid #e5e7eb; margin-top: 8px;">
         <span style="font-weight: 700; font-size: 15px;">Total</span>
@@ -132,7 +141,7 @@ function OrderSummaryBox(order) {
         </span>
       </div>
     </div>
-  `
+  `;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -146,7 +155,7 @@ export function welcomeEmail({ displayName }) {
       <html><body style="${styles.body}">
         <div style="${styles.wrapper}">
           <div style="${styles.card}">
-            ${Header('Your account is ready')}
+            ${Header("Your account is ready")}
             <div style="${styles.body_inner}">
               <h2 style="${styles.h2}">Hey ${displayName}, welcome aboard! 👋</h2>
               <p style="${styles.p}">
@@ -167,15 +176,15 @@ export function welcomeEmail({ displayName }) {
         </div>
       </body></html>
     `,
-  }
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TEMPLATE 2 — Order confirmed (Razorpay + COD)
 // ═══════════════════════════════════════════════════════════════════════════
 export function orderConfirmedEmail({ order, orderId }) {
-  const isRazorpay = order.paymentMethod === 'razorpay'
-  const addr = order.shippingAddress
+  const isRazorpay = order.paymentMethod === "razorpay";
+  const addr = order.shippingAddress;
 
   return {
     subject: `Order confirmed — #${orderId.slice(0, 8).toUpperCase()} 🎉`,
@@ -184,13 +193,15 @@ export function orderConfirmedEmail({ order, orderId }) {
       <html><body style="${styles.body}">
         <div style="${styles.wrapper}">
           <div style="${styles.card}">
-            ${Header('Order confirmation')}
+            ${Header("Order confirmation")}
             <div style="${styles.body_inner}">
               <h2 style="${styles.h2}">Your order is confirmed! ✅</h2>
               <p style="${styles.p}">
-                ${isRazorpay
-                  ? 'Payment received successfully. We\'re preparing your order now.'
-                  : 'Your Cash on Delivery order has been placed. Please keep the exact amount ready at delivery.'}
+                ${
+                  isRazorpay
+                    ? "Payment received successfully. We're preparing your order now."
+                    : "Your Cash on Delivery order has been placed. Please keep the exact amount ready at delivery."
+                }
               </p>
 
               <div style="background: #eef2ff; border-radius: 10px;
@@ -217,7 +228,7 @@ export function orderConfirmedEmail({ order, orderId }) {
                           padding: 16px 20px; margin-bottom: 24px;
                           font-size: 14px; color: #374151; line-height: 1.6;">
                 <strong>${addr.fullName}</strong><br>
-                ${addr.line1}${addr.line2 ? ', ' + addr.line2 : ''}<br>
+                ${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}<br>
                 ${addr.city}, ${addr.state} — ${addr.pincode}<br>
                 📞 ${addr.phone}
               </div>
@@ -233,7 +244,7 @@ export function orderConfirmedEmail({ order, orderId }) {
         </div>
       </body></html>
     `,
-  }
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -242,34 +253,34 @@ export function orderConfirmedEmail({ order, orderId }) {
 export function orderStatusEmail({ order, orderId, newStatus }) {
   const messages = {
     processing: {
-      emoji: '⚙️',
-      title: 'Your order is being processed',
-      body: 'Our team is packing your items and getting them ready for dispatch.',
+      emoji: "⚙️",
+      title: "Your order is being processed",
+      body: "Our team is packing your items and getting them ready for dispatch.",
     },
     shipped: {
-      emoji: '🚚',
-      title: 'Your order is on its way!',
-      body: 'Your package has been dispatched and is heading to you. It should arrive within 3-5 business days.',
+      emoji: "🚚",
+      title: "Your order is on its way!",
+      body: "Your package has been dispatched and is heading to you. It should arrive within 3-5 business days.",
     },
     delivered: {
-      emoji: '📦',
-      title: 'Order delivered successfully!',
-      body: 'Your order has been delivered. We hope you love your purchase! Leave a review to help other shoppers.',
+      emoji: "📦",
+      title: "Order delivered successfully!",
+      body: "Your order has been delivered. We hope you love your purchase! Leave a review to help other shoppers.",
     },
     cancelled: {
-      emoji: '❌',
-      title: 'Your order has been cancelled',
-      body: 'Your order has been cancelled. If you paid online, the refund will be credited within 5-7 business days.',
+      emoji: "❌",
+      title: "Your order has been cancelled",
+      body: "Your order has been cancelled. If you paid online, the refund will be credited within 5-7 business days.",
     },
-  }
+  };
 
   const msg = messages[newStatus] || {
-    emoji: '📋',
+    emoji: "📋",
     title: `Order status updated to ${newStatus}`,
-    body: 'Your order status has been updated.',
-  }
+    body: "Your order status has been updated.",
+  };
 
-  const color = statusColor(newStatus)
+  const color = statusColor(newStatus);
 
   return {
     subject: `${msg.emoji} Order #${orderId.slice(0, 8).toUpperCase()} — ${newStatus}`,
@@ -278,7 +289,7 @@ export function orderStatusEmail({ order, orderId, newStatus }) {
       <html><body style="${styles.body}">
         <div style="${styles.wrapper}">
           <div style="${styles.card}">
-            ${Header('Order update')}
+            ${Header("Order update")}
             <div style="${styles.body_inner}">
               <div style="font-size: 40px; margin-bottom: 16px;">${msg.emoji}</div>
               <h2 style="${styles.h2}">${msg.title}</h2>
@@ -298,22 +309,26 @@ export function orderStatusEmail({ order, orderId, newStatus }) {
                 <span style="${styles.badge(color)}">${newStatus}</span>
               </div>
 
-              ${newStatus === 'delivered' ? `
+              ${
+                newStatus === "delivered"
+                  ? `
                 <a href="${APP_URL}/products" style="${styles.btn}">
                   Write a review →
                 </a>
-              ` : `
+              `
+                  : `
                 <a href="${APP_URL}/orders/${orderId}" style="${styles.btn}">
                   Track order →
                 </a>
-              `}
+              `
+              }
             </div>
             ${Footer()}
           </div>
         </div>
       </body></html>
     `,
-  }
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -355,14 +370,14 @@ export function paymentFailedEmail({ displayName, orderId, amount }) {
         </div>
       </body></html>
     `,
-  }
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TEMPLATE 5 — Admin: new order alert
 // ═══════════════════════════════════════════════════════════════════════════
 export function adminNewOrderEmail({ order, orderId }) {
-  const addr = order.shippingAddress
+  const addr = order.shippingAddress;
 
   return {
     subject: `🛍 New order — #${orderId.slice(0, 8).toUpperCase()} (${formatPrice(order.total)})`,
@@ -403,8 +418,8 @@ export function adminNewOrderEmail({ order, orderId }) {
                     Payment
                   </p>
                   <p style="margin: 6px 0 0; font-size: 14px; font-weight: 600;
-                             color: ${order.paymentMethod === 'cod' ? '#10b981' : '#4f46e5'};">
-                    ${order.paymentMethod === 'cod' ? '💵 Cash on Delivery' : '🔒 Razorpay'}
+                             color: ${order.paymentMethod === "cod" ? "#10b981" : "#4f46e5"};">
+                    ${order.paymentMethod === "cod" ? "💵 Cash on Delivery" : "🔒 Razorpay"}
                   </p>
                 </div>
                 <div style="background: #f9fafb; border-radius: 10px; padding: 14px;">
@@ -432,7 +447,7 @@ export function adminNewOrderEmail({ order, orderId }) {
               <div style="background: #f9fafb; border-radius: 10px;
                           padding: 14px 18px; margin-bottom: 24px;
                           font-size: 14px; color: #374151; line-height: 1.7;">
-                ${addr.line1}${addr.line2 ? ', ' + addr.line2 : ''}<br>
+                ${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}<br>
                 ${addr.city}, ${addr.state} — ${addr.pincode}<br>
                 📞 ${addr.phone}
               </div>
@@ -448,7 +463,7 @@ export function adminNewOrderEmail({ order, orderId }) {
         </div>
       </body></html>
     `,
-  }
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -456,7 +471,7 @@ export function adminNewOrderEmail({ order, orderId }) {
 // ═══════════════════════════════════════════════════════════════════════════
 export function lowStockEmail({ products }) {
   return {
-    subject: `⚠️ Low stock alert — ${products.length} product${products.length !== 1 ? 's' : ''} need attention`,
+    subject: `⚠️ Low stock alert — ${products.length} product${products.length !== 1 ? "s" : ""} need attention`,
     html: `
       <!DOCTYPE html>
       <html><body style="${styles.body}">
@@ -469,7 +484,7 @@ export function lowStockEmail({ products }) {
             <div style="${styles.body_inner}">
               <div style="font-size: 36px; margin-bottom: 16px;">⚠️</div>
               <h2 style="${styles.h2}">
-                ${products.length} product${products.length !== 1 ? 's' : ''} running low
+                ${products.length} product${products.length !== 1 ? "s" : ""} running low
               </h2>
               <p style="${styles.p}">
                 The following products need to be restocked to avoid going out of stock.
@@ -484,19 +499,23 @@ export function lowStockEmail({ products }) {
                   </tr>
                 </thead>
                 <tbody>
-                  ${products.map((p) => `
+                  ${products
+                    .map(
+                      (p) => `
                     <tr>
                       <td style="${styles.td}">${p.name}</td>
                       <td style="${styles.td}; text-align: center; font-weight: 600;">
                         ${p.stock}
                       </td>
                       <td style="${styles.td}; text-align: center;">
-                        <span style="${styles.badge(p.stock === 0 ? '#ef4444' : '#f59e0b')}">
-                          ${p.stock === 0 ? 'Out of stock' : 'Low stock'}
+                        <span style="${styles.badge(p.stock === 0 ? "#ef4444" : "#f59e0b")}">
+                          ${p.stock === 0 ? "Out of stock" : "Low stock"}
                         </span>
                       </td>
                     </tr>
-                  `).join('')}
+                  `,
+                    )
+                    .join("")}
                 </tbody>
               </table>
 
@@ -511,26 +530,153 @@ export function lowStockEmail({ products }) {
         </div>
       </body></html>
     `,
-  }
+  };
 }
 
+// ── Admin: new return request ─────────────────────────────────────────────
+export function adminReturnRequestEmail({
+  returnId,
+  orderId,
+  reason,
+  items,
+  refundAmount,
+}) {
+  return {
+    subject: `↩ Return request #${returnId?.slice(0, 8).toUpperCase()} — ${formatPrice(refundAmount)}`,
+    html: `
+      <!DOCTYPE html>
+      <html><body style="${styles.body}">
+        <div style="${styles.wrapper}">
+          <div style="${styles.card}">
+            <div style="background:#111827;padding:28px 32px;">
+              <p style="${styles.logo}">ShopNext Admin</p>
+              <p style="${styles.headerSub}">New return request received</p>
+            </div>
+            <div style="${styles.body_inner}">
+              <h2 style="${styles.h2}">Return Request #${returnId?.slice(0, 8).toUpperCase()}</h2>
+              <p style="${styles.p}">
+                Order <strong>#${orderId?.slice(0, 8).toUpperCase()}</strong>
+                · Reason: <strong>${reason}</strong>
+              </p>
+              ${OrderItemsTable(items.map((i) => ({ ...i, quantity: i.returnQty })))}
+              <div style="background:#f9fafb;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
+                <p style="margin:0;font-size:14px;color:#6b7280;">Refund amount</p>
+                <p style="margin:4px 0 0;font-size:22px;font-weight:700;color:#4f46e5;">
+                  ${formatPrice(refundAmount)}
+                </p>
+              </div>
+              <a href="${APP_URL}/admin/returns" style="${styles.btn}">
+                Review request →
+              </a>
+            </div>
+          </div>
+        </div>
+      </body></html>
+    `,
+  };
+}
+
+// ── Customer: return status update ────────────────────────────────────────
+export function returnStatusEmail({
+  status,
+  adminNote,
+  returnId,
+  orderId,
+  refundAmount,
+}) {
+  const isApproved = status === "approved" || status === "refunded";
+  const isRefunded = status === "refunded";
+
+  return {
+    subject: isRefunded
+      ? `✅ Refund processed for your return request`
+      : isApproved
+        ? `✅ Return request approved — refund coming soon`
+        : `❌ Return request update`,
+    html: `
+      <!DOCTYPE html>
+      <html><body style="${styles.body}">
+        <div style="${styles.wrapper}">
+          <div style="${styles.card}">
+            ${Header("Return request update")}
+            <div style="${styles.body_inner}">
+              <div style="font-size:40px;margin-bottom:16px;">
+                ${isRefunded ? "💰" : isApproved ? "✅" : "❌"}
+              </div>
+              <h2 style="${styles.h2}">
+                ${
+                  isRefunded
+                    ? "Refund has been processed!"
+                    : isApproved
+                      ? "Return request approved!"
+                      : "Return request update"
+                }
+              </h2>
+              <p style="${styles.p}">
+                Return request <strong>#${returnId?.slice(0, 8).toUpperCase()}</strong>
+                for Order <strong>#${orderId?.slice(0, 8).toUpperCase()}</strong>
+                ${
+                  isRefunded
+                    ? `— your refund of <strong>${formatPrice(refundAmount)}</strong> has been processed.`
+                    : isApproved
+                      ? `has been <strong>approved</strong>.`
+                      : `has been <strong>rejected</strong>.`
+                }
+              </p>
+              ${
+                adminNote
+                  ? `
+                <div style="background:#f9fafb;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
+                  <p style="margin:0;font-size:12px;color:#9ca3af;font-weight:600;text-transform:uppercase;">
+                    Message from our team
+                  </p>
+                  <p style="margin:8px 0 0;font-size:14px;color:#374151;">${adminNote}</p>
+                </div>
+              `
+                  : ""
+              }
+              ${
+                isApproved && !isRefunded
+                  ? `
+                <p style="${styles.p}">
+                  Your refund of <strong>${formatPrice(refundAmount)}</strong>
+                  will be credited within 5–7 business days.
+                </p>
+              `
+                  : ""
+              }
+              <a href="${APP_URL}/orders/${orderId}" style="${styles.btn}">
+                View order →
+              </a>
+            </div>
+            ${Footer()}
+          </div>
+        </div>
+      </body></html>
+    `,
+  };
+}
 
 // ── Unified getter — used by the API route ─────────────────────
 export function getEmailTemplate(type, data) {
   switch (type) {
-    case 'welcome':
-      return welcomeEmail(data)
-    case 'order_confirmed':
-      return orderConfirmedEmail(data)
-    case 'order_status':
-      return orderStatusEmail(data)
-    case 'payment_failed':
-      return paymentFailedEmail(data)
-    case 'admin_new_order':
-      return adminNewOrderEmail(data)
-    case 'low_stock':
-      return lowStockEmail(data)
+    case "welcome":
+      return welcomeEmail(data);
+    case "order_confirmed":
+      return orderConfirmedEmail(data);
+    case "order_status":
+      return orderStatusEmail(data);
+    case "payment_failed":
+      return paymentFailedEmail(data);
+    case "admin_new_order":
+      return adminNewOrderEmail(data);
+    case "low_stock":
+      return lowStockEmail(data);
+    case "admin_return_request":
+      return adminReturnRequestEmail(data);
+    case "return_status":
+      return returnStatusEmail(data);
     default:
-      return null
+      return null;
   }
 }

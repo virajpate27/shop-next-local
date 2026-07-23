@@ -7,8 +7,12 @@ import Image from 'next/image'
 import { Suspense } from 'react'
 import {
   CheckCircle2, Package, MapPin, CreditCard,
-  Banknote, Loader2, ChevronLeft, Tag,
+  Banknote, Loader2, ChevronLeft, Tag,RotateCcw,
 } from 'lucide-react'
+import { ReturnRequestModal } from '@/components/orders/ReturnRequestModal'
+import { ReturnStatusBadge } from '@/components/orders/ReturnStatusBadge'
+import { getReturnByOrderId, isReturnEligible, RETURN_STATUSES } from '@/lib/firebase/returns'
+
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { OrderTimeline } from '@/components/orders/OrderTimeline'
@@ -23,6 +27,23 @@ function OrderDetailContent() {
 
   const [order,   setOrder]   = useState(null)
   const [loading, setLoading] = useState(true)
+
+  const [showReturnModal, setShowReturnModal] = useState(false)
+const [returnRequest,   setReturnRequest]   = useState(null)
+const [returnLoading,   setReturnLoading]   = useState(false)
+
+
+// Fetch existing return request for this order:
+useEffect(() => {
+  if (!order?.id) return
+  setReturnLoading(true)
+  getReturnByOrderId(order.id)
+    .then(setReturnRequest)
+    .finally(() => setReturnLoading(false))
+}, [order?.id])
+
+// Eligibility check:
+const eligibility = order ? isReturnEligible(order) : { eligible: false }
 
   // ── Real-time listener — status updates reflect instantly ─────────────
   useEffect(() => {
@@ -101,6 +122,108 @@ function OrderDetailContent() {
           Placed on {formatDate(order.createdAt)}
         </p>
       </div>
+
+
+      {/* Return / refund section */}
+{order?.status === 'delivered' && (
+  <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-4">
+    <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-center gap-2">
+        <RotateCcw className="w-4 h-4 text-indigo-600" />
+        <h2 className="font-semibold text-gray-900">Return & refund</h2>
+      </div>
+
+      {returnLoading ? (
+        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+      ) : returnRequest ? (
+        <ReturnStatusBadge status={returnRequest.status} />
+      ) : eligibility.eligible ? (
+        <button
+          onClick={() => setShowReturnModal(true)}
+          className="flex items-center gap-1.5 text-sm text-indigo-600 font-medium border border-indigo-200 px-4 py-2 rounded-xl hover:bg-indigo-50 transition-colors"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          Request return
+        </button>
+      ) : null}
+    </div>
+
+    {/* Return request details */}
+    {returnRequest && (
+      <div className="mt-4 space-y-3">
+        <div className="bg-gray-50 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              Return request
+            </p>
+            <p className="text-xs text-gray-400">
+              #{returnRequest.id.slice(0, 8).toUpperCase()}
+            </p>
+          </div>
+          <p className="text-sm text-gray-700 mb-1">
+            <span className="font-medium">Reason:</span> {returnRequest.reason}
+          </p>
+          {returnRequest.customNote && (
+            <p className="text-sm text-gray-600">
+              <span className="font-medium">Note:</span> {returnRequest.customNote}
+            </p>
+          )}
+          <p className="text-sm font-semibold text-indigo-600 mt-2">
+            Refund amount: {formatPrice(returnRequest.refundAmount)}
+          </p>
+        </div>
+
+        {/* Admin response */}
+        {returnRequest.adminNote && (
+          <div className={`rounded-xl p-4 ${
+            returnRequest.status === 'approved'
+              ? 'bg-green-50 border border-green-100'
+              : 'bg-red-50 border border-red-100'
+          }`}>
+            <p className={`text-xs font-semibold mb-1 ${
+              returnRequest.status === 'approved' ? 'text-green-700' : 'text-red-700'
+            }`}>
+              {returnRequest.status === 'approved' ? 'Approved ✓' : 'Rejected ✗'}
+            </p>
+            <p className={`text-sm ${
+              returnRequest.status === 'approved' ? 'text-green-600' : 'text-red-600'
+            }`}>
+              {returnRequest.adminNote}
+            </p>
+          </div>
+        )}
+      </div>
+    )}
+
+    {/* Eligibility info */}
+    {!returnRequest && (
+      <div className="mt-3">
+        {eligibility.eligible ? (
+          <p className="text-xs text-green-600">
+            ✓ Eligible for return · {eligibility.daysRemaining} day{eligibility.daysRemaining !== 1 ? 's' : ''} remaining in return window
+          </p>
+        ) : (
+          <p className="text-xs text-gray-400">{eligibility.reason}</p>
+        )}
+      </div>
+    )}
+  </div>
+)}
+
+{/* Return modal */}
+{showReturnModal && order && (
+  <ReturnRequestModal
+    order={order}
+    onClose={() => setShowReturnModal(false)}
+    onSuccess={() => {
+      getReturnByOrderId(order.id).then(setReturnRequest)
+    }}
+  />
+)}
+
+
+
+
 
       {/* ── Timeline ──────────────────────────────────────────────────── */}
       <div className="bg-white border border-gray-100 rounded-2xl p-6 mb-4">
