@@ -7,28 +7,56 @@ export async function POST(req) {
     const { items } = await req.json()
 
     if (!items?.length) {
-      return NextResponse.json(
-        { error: 'No items provided' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'No items provided' }, { status: 400 })
     }
 
-    // Increment stock for each returned item
-    const batch = adminDb.batch()
+    await Promise.all(items.map((item) => restoreProductStock(item)))
 
-    items.forEach((item) => {
-      if (!item.productId || !item.returnQty) return
-      const ref = adminDb.collection('products').doc(item.productId)
-      batch.update(ref, {
-        stock:     FieldValue.increment(item.returnQty),
-        soldCount: FieldValue.increment(-item.returnQty),
-      })
-    })
-
-    await batch.commit()
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('Stock restore failed:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
+}
+
+async function restoreProductStock(item) {
+  const { productId, variantId, returnQty } = item
+  if (!productId || !returnQty) return
+
+  const productRef = await fetchDoc('products', productId)
+  if (!productRef) throw new Error(`Product ${productId} not found`)
+
+  const updates = {}
+
+  // Restore top-level stock
+  updates.stock     = (productRef.stock     || 0) + returnQty
+  updates.soldCount = Math.max(0, (productRef.soldCount || 0) - returnQty)
+
+  // Restore variant stock if applicable
+  if (variantId && productRef.variants?.length) {
+    const updatedVariants = productRef.variants.map((variant) => {
+      if (variant.id === variantId) {
+        return {
+          ...variant,
+          stock: (Number(variant.stock) || 0) + returnQty,
+        }
+      }
+      return variant
+    })
+    updates.variants = updatedVariants
+  }
+
+  await patchDoc('products', productId, updates)
+}
+
+async function fetchDoc(collection, id) {
+  const db   = getAdminDb()
+  const snap = await db.collection(collection).doc(id).get()
+  if (!snap.exists) return null
+  return snap.data()
+}
+
+async function patchDoc(collection, id, fields) {
+  const db = getAdminDb()
+  await db.collection(collection).doc(id).update(fields)
 }
