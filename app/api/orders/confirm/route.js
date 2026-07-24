@@ -17,7 +17,17 @@ function getAdminDb() {
   return getFirestore()
 }
 
+async function fetchDoc(collection, id) {
+  const db   = getAdminDb()
+  const snap = await db.collection(collection).doc(id).get()
+  if (!snap.exists) return null
+  return snap.data()
+}
 
+async function patchDoc(collection, id, fields) {
+  const db = getAdminDb()
+  await db.collection(collection).doc(id).update(fields)
+}
 
 const adminDb = getFirestore()
 
@@ -74,14 +84,3 @@ async function decrementProductStock(item) {
 }
 
 
-async function fetchDoc(collection, id) {
-  const db   = getAdminDb()
-  const snap = await db.collection(collection).doc(id).get()
-  if (!snap.exists) return null
-  return snap.data()
-}
-
-async function patchDoc(collection, id, fields) {
-  const db = getAdminDb()
-  await db.collection(collection).doc(id).update(fields)
-}

@@ -2,6 +2,19 @@
 import { NextResponse } from 'next/server'
 import { adminDb, FieldValue } from '@/lib/firebase/admin'
 
+function getAdminDb() {
+  if (!getApps().length) {
+    initializeApp({
+      credential: cert({
+        projectId:   process.env.FIREBASE_ADMIN_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+        privateKey:  process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      }),
+    })
+  }
+  return getFirestore()
+}
+
 export async function POST(req) {
   try {
     const { items } = await req.json()
