@@ -1,7 +1,8 @@
-// src/app/api/returns/restore-stock/route.js
 import { NextResponse } from 'next/server'
-import { adminDb, FieldValue } from '@/lib/firebase/admin'
+import { initializeApp, getApps, cert } from 'firebase-admin/app'
+import { getFirestore } from 'firebase-admin/firestore'
 
+// ── Firebase Admin singleton ───────────────────────────────────────────────
 function getAdminDb() {
   if (!getApps().length) {
     initializeApp({
@@ -15,61 +16,81 @@ function getAdminDb() {
   return getFirestore()
 }
 
+// ── Main handler ───────────────────────────────────────────────────────────
 export async function POST(req) {
   try {
     const { items } = await req.json()
 
     if (!items?.length) {
-      return NextResponse.json({ error: 'No items provided' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'No items provided' },
+        { status: 400 }
+      )
     }
 
-    await Promise.all(items.map((item) => restoreProductStock(item)))
+    const db = getAdminDb()
+
+    // Process all items in parallel
+    await Promise.all(
+      items.map((item) => restoreProductStock(db, item))
+    )
 
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('Stock restore failed:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json(
+      { error: err.message || 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
 
-async function restoreProductStock(item) {
+// ── Restore both top-level stock and variant stock ─────────────────────────
+async function restoreProductStock(db, item) {
   const { productId, variantId, returnQty } = item
+
   if (!productId || !returnQty) return
 
-  const productRef = await fetchDoc('products', productId)
-  if (!productRef) throw new Error(`Product ${productId} not found`)
+  const productRef  = db.collection('products').doc(productId)
+  const productSnap = await productRef.get()
 
+  if (!productSnap.exists) {
+    console.warn(`Product ${productId} not found — skipping stock restore`)
+    return
+  }
+
+  const product = productSnap.data()
   const updates = {}
 
-  // Restore top-level stock
-  updates.stock     = (productRef.stock     || 0) + returnQty
-  updates.soldCount = Math.max(0, (productRef.soldCount || 0) - returnQty)
+  // ── Top-level stock (always restored) ───────────────────────────────────
+  const currentStock = Number(product.stock) || 0
+  updates.stock      = currentStock + returnQty
+  updates.soldCount  = Math.max(0, (Number(product.soldCount) || 0) - returnQty)
 
-  // Restore variant stock if applicable
-  if (variantId && productRef.variants?.length) {
-    const updatedVariants = productRef.variants.map((variant) => {
+  // ── Variant stock (only if product has variations and variantId provided) ─
+  if (variantId && product.variants?.length) {
+    let variantFound = false
+
+    const updatedVariants = product.variants.map((variant) => {
       if (variant.id === variantId) {
+        variantFound = true
+        const currentVariantStock = Number(variant.stock) || 0
         return {
           ...variant,
-          stock: (Number(variant.stock) || 0) + returnQty,
+          stock: currentVariantStock + returnQty,
         }
       }
       return variant
     })
-    updates.variants = updatedVariants
+
+    if (variantFound) {
+      updates.variants = updatedVariants
+    } else {
+      console.warn(
+        `Variant ${variantId} not found in product ${productId} — only top-level stock restored`
+      )
+    }
   }
 
-  await patchDoc('products', productId, updates)
-}
-
-async function fetchDoc(collection, id) {
-  const db   = getAdminDb()
-  const snap = await db.collection(collection).doc(id).get()
-  if (!snap.exists) return null
-  return snap.data()
-}
-
-async function patchDoc(collection, id, fields) {
-  const db = getAdminDb()
-  await db.collection(collection).doc(id).update(fields)
+  await productRef.update(updates)
 }

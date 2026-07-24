@@ -1,9 +1,8 @@
-// src/app/api/orders/confirm/route.js
 import { NextResponse } from 'next/server'
 import { initializeApp, getApps, cert } from 'firebase-admin/app'
-import { getFirestore }                  from 'firebase-admin/firestore'
+import { getFirestore } from 'firebase-admin/firestore'
 
-// Initialize Firebase Admin (server-side, full permissions)
+// ── Firebase Admin singleton ───────────────────────────────────────────────
 function getAdminDb() {
   if (!getApps().length) {
     initializeApp({
@@ -17,70 +16,88 @@ function getAdminDb() {
   return getFirestore()
 }
 
-async function fetchDoc(collection, id) {
-  const db   = getAdminDb()
-  const snap = await db.collection(collection).doc(id).get()
-  if (!snap.exists) return null
-  return snap.data()
-}
-
-async function patchDoc(collection, id, fields) {
-  const db = getAdminDb()
-  await db.collection(collection).doc(id).update(fields)
-}
-
-const adminDb = getFirestore()
-
+// ── Main handler ───────────────────────────────────────────────────────────
 export async function POST(req) {
   try {
     const { orderId, items } = await req.json()
 
-    if (!orderId || !items?.length) {
+    if (!orderId) {
       return NextResponse.json(
-        { error: 'Missing orderId or items' },
+        { error: 'Missing orderId' },
         { status: 400 }
       )
     }
 
-    await Promise.all(items.map((item) => decrementProductStock(item)))
+    if (!items?.length) {
+      return NextResponse.json(
+        { error: 'Missing items' },
+        { status: 400 }
+      )
+    }
+
+    const db = getAdminDb()
+
+    // Process all items in parallel
+    await Promise.all(
+      items.map((item) => decrementProductStock(db, item))
+    )
 
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('Order confirm failed:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json(
+      { error: err.message || 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
 
-async function decrementProductStock(item) {
+// ── Decrement both top-level stock and variant stock ───────────────────────
+async function decrementProductStock(db, item) {
   const { productId, variantId, quantity } = item
 
-  // ── Fetch current product document ──────────────────────────────────
-  const productRef = await fetchDoc('products', productId)
-  if (!productRef) throw new Error(`Product ${productId} not found`)
+  if (!productId || !quantity) return
 
+  const productRef  = db.collection('products').doc(productId)
+  const productSnap = await productRef.get()
+
+  if (!productSnap.exists) {
+    console.warn(`Product ${productId} not found — skipping stock decrement`)
+    return
+  }
+
+  const product = productSnap.data()
   const updates = {}
 
-  // ── Always decrement top-level stock ────────────────────────────────
-  const currentStock = productRef.stock || 0
-  updates.stock     = Math.max(0, currentStock - quantity)
-  updates.soldCount = (productRef.soldCount || 0) + quantity
+  // ── Top-level stock (always decremented) ────────────────────────────────
+  const currentStock = Number(product.stock) || 0
+  updates.stock      = Math.max(0, currentStock - quantity)
+  updates.soldCount  = (Number(product.soldCount) || 0) + quantity
 
-  // ── Also decrement variant stock if this is a variation product ──────
-  if (variantId && productRef.variants?.length) {
-    const updatedVariants = productRef.variants.map((variant) => {
+  // ── Variant stock (only if product has variations and variantId provided) ─
+  if (variantId && product.variants?.length) {
+    let variantFound = false
+
+    const updatedVariants = product.variants.map((variant) => {
       if (variant.id === variantId) {
+        variantFound = true
+        const currentVariantStock = Number(variant.stock) || 0
         return {
           ...variant,
-          stock: Math.max(0, (Number(variant.stock) || 0) - quantity),
+          stock: Math.max(0, currentVariantStock - quantity),
         }
       }
       return variant
     })
-    updates.variants = updatedVariants
+
+    if (variantFound) {
+      updates.variants = updatedVariants
+    } else {
+      console.warn(
+        `Variant ${variantId} not found in product ${productId} — only top-level stock decremented`
+      )
+    }
   }
 
-  // ── Write back ───────────────────────────────────────────────────────
-  await patchDoc('products', productId, updates)
+  await productRef.update(updates)
 }
-
-
